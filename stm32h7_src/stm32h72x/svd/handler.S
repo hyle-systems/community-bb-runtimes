@@ -56,7 +56,7 @@ __vectors:
 	.word __gnat_irq_trap        /* 40 TIM1_BRK */
 	.word __gnat_irq_trap        /* 41 TIM1_UP */
 	.word __gnat_irq_trap        /* 42 TIM1_TRG_COM */
-	.word __gnat_irq_trap        /* 43 TIM_CC */
+	.word __gnat_irq_trap        /* 43 TIM1_CC (named TIM_CC in STM32H723.svd) */
 	.word __gnat_irq_trap        /* 44 TIM2 */
 	.word __gnat_irq_trap        /* 45 TIM3 */
 	.word __gnat_irq_trap        /* 46 TIM4 */
