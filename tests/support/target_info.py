@@ -101,6 +101,7 @@ class TargetInfo:
             "stm32g0xx",
             "stm32f0xx",
             "stm32f4xx",
+            "stm32h7xx",
             "rp2040",
             "rp2350",
             "nrf54l_app",

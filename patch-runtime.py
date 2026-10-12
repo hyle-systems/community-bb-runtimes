@@ -35,6 +35,7 @@ target_src_dirs = {
     "stm32g0xx": "stm32g0_src",
     "stm32g4xx": "stm32g4_src",
     "stm32f4xx": "stm32f4_src",
+    "stm32h7xx": "stm32h7_src",
 }
 
 

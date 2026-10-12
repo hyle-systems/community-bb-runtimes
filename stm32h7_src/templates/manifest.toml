@@ -1,0 +1,22 @@
+[[template]]
+src = "alire.toml.in"
+dst = "alire.toml"
+
+[[template]]
+src = "ravenscar_build.gpr.in"
+dst = "ravenscar_build.gpr"
+excluded_profiles = ["light"]
+
+[[template]]
+src = "runtime_build__light.gpr.in"
+dst = "runtime_build.gpr"
+excluded_profiles = ["light-tasking", "embedded"]
+
+[[template]]
+src = "runtime_build.gpr.in"
+dst = "runtime_build.gpr"
+excluded_profiles = ["light"]
+
+[[template]]
+src = "stm32h7xx_runtime_config.ads.in"
+dst = "gnat_user/stm32h7xx_runtime_config.ads"

@@ -54,6 +54,7 @@ all_targets=(\
   "stm32g0xx" \
   "stm32g4xx" \
   "stm32f4xx" \
+  "stm32h7xx" \
 )
 
 if [[ -z $target ]]; then
