@@ -81,6 +81,7 @@ class GdbTargetInterface:
             text output from the target program.
         """
         self.terminal_io_port = terminal_io_port
+        self.executable_file = executable_file
 
         gdb_path = find_gdb(runtime_crate_dir, "arm-eabi")
 
@@ -141,7 +142,7 @@ class GdbTargetInterface:
     ):
         """Send a command to the remote monitor"""
         self._write(f'-interpreter-exec console "monitor {cmd}"', read_response=False)
-        self._wait_for_result()
+        self._wait_for_result(timeout_sec=timeout_sec)
 
     def read_io(self, timeout=5.0):
         """Read semihosting data from the target"""
@@ -269,6 +270,16 @@ class OpenOcdInterface(GdbTargetInterface):
 
     def reset(self):
         self.monitor_command("reset halt")
+
+    def load(self, timeout_sec=30.0):
+        # A GDB built without XML support (e.g. the one bundled with the
+        # gnat_arm_elf toolchain) cannot read OpenOCD's memory map, so GDB's
+        # own "load" writes flash with plain memory writes, which OpenOCD
+        # silently drops. Let OpenOCD program the flash itself instead.
+        path = str(self.executable_file.absolute()).replace("\\", "/")
+        self.monitor_command(
+            f"flash write_image erase {{{path}}}", timeout_sec=timeout_sec
+        )
 
 
 class StUtilInterface(GdbTargetInterface):
