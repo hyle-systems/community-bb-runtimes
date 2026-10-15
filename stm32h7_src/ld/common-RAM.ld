@@ -126,9 +126,13 @@ SECTIONS
     __data_end = .;
   } > sram_da
 
-  .ccmdata :
+  .axisram :
   {
     __ccmdata_start = .;
+    /* Large or shared data in the AXI SRAM (STM32H7 family). The symbols
+       keep the generator's __ccmdata_* names: the start-up copies the
+       section with them. The .ccmdata input name is accepted too. */
+    *(.axisram .axisram.*)
     *(.ccmdata .ccmdata.*)
 
     /* Ensure that the end of the data section is always word aligned.

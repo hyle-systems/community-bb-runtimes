@@ -131,9 +131,13 @@ SECTIONS
   __data_words = (__data_end - __data_start) >> 2;
 
   __ccmdata_load = __rom_end + (__data_words << 2);
-  .ccmdata : AT (__ccmdata_load)
+  .axisram : AT (__ccmdata_load)
   {
     __ccmdata_start = .;
+    /* Large or shared data in the AXI SRAM (STM32H7 family). The symbols
+       keep the generator's __ccmdata_* names: the start-up copies the
+       section with them. The .ccmdata input name is accepted too. */
+    *(.axisram .axisram.*)
     *(.ccmdata .ccmdata.*)
 
     /* Ensure that the end of the data section is always word aligned.
