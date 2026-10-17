@@ -4,8 +4,10 @@ with System.Storage_Elements; use System.Storage_Elements;
 package body Test_LCH is
 
    procedure Last_Chance_Handler (Msg : System.Address; Line : Integer) is
-      Text : String (1 .. 80);
-      Last : Natural := 0;
+      pragma Unreferenced (Line);
+      Text  : String (1 .. 200);
+      Last  : Natural := 0;
+      First : Positive := 1;
    begin
       --  Msg is a NUL-terminated string
       for I in Text'Range loop
@@ -18,8 +20,14 @@ package body Test_LCH is
             Last := I;
          end;
       end loop;
-      Ada.Text_IO.Put_Line ("last chance: " & Text (1 .. Last)
-                            & (if Line /= 0 then ":" & Integer'Image (Line) else ""));
+      --  Keep what follows the last ": "
+      for I in reverse 1 .. Last - 1 loop
+         if Text (I) = ':' and then Text (I + 1) = ' ' then
+            First := I + 2;
+            exit;
+         end if;
+      end loop;
+      Ada.Text_IO.Put_Line ("last chance: " & Text (First .. Last));
       Ada.Text_IO.Put_Line ("===TEST COMPLETE===");
       loop
          null;

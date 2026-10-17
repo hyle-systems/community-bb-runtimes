@@ -15,7 +15,7 @@ __vectors:
 	.word   0                    /* stack top address */
 	.word   fault                /* 1 Reset.  */
 	/* The five fault vectors go to __gnat_fault_trap, defined at the end of
-	   this file: the fault's name into the last-chance handler, in every
+	   this file, which raises the fault into the last-chance handler in every
 	   profile (SVD2Ada's default `fault: b fault` left a faulted board silent
 	   until reset). The start-up installs this table through VTOR before
 	   anything that can fault. Reserved vectors unchanged. */
@@ -228,42 +228,18 @@ __gnat_sys_tick_trap:
 0:	b 0b
 	.size __gnat_sys_tick_trap, . - __gnat_sys_tick_trap
 
-	/* Fault trap: NMI, HardFault, MemManage, BusFault and UsageFault end in
-	   the last-chance handler with the fault's name and line 0. It lives
-	   here, next to the table, so that it exists whenever the table does -
-	   in every profile and every program, tasking or not. IPSR gives the
-	   exception number; the handler runs on the main stack in Handler mode,
-	   reachable even when a task's stack has been destroyed. The last-chance
-	   handler does not return. */
+	/* Fault trap: NMI, HardFault, MemManage, BusFault and UsageFault. The
+	   exception number from IPSR goes to System.BB.Faults.Report (a libgnat
+	   unit, linked whenever this table is), which raises the fault as an Ada
+	   exception: it ends in the last-chance handler in the shape each
+	   profile's handler expects. Report does not return. */
 	.thumb_func
 	.globl __gnat_fault_trap
 	.type __gnat_fault_trap, %function
 __gnat_fault_trap:
-	mrs	r1, ipsr
-	ubfx	r1, r1, #0, #9
-	subs	r1, #2			/* 0 .. 4 for vectors 2 .. 6 */
-	cmp	r1, #4
-	bhi	1f
-	adr	r2, .Lfault_names
-	ldr	r0, [r2, r1, lsl #2]
-	b	2f
-1:	adr	r0, .Lname_other
-2:	movs	r1, #0
-	b	__gnat_last_chance_handler
-	.balign 4
-.Lfault_names:
-	.word	.Lname_nmi
-	.word	.Lname_hard
-	.word	.Lname_mem
-	.word	.Lname_bus
-	.word	.Lname_usage
-.Lname_nmi:	.asciz "non-maskable interrupt"
-.Lname_hard:	.asciz "hard fault"
-.Lname_mem:	.asciz "memory management fault"
-.Lname_bus:	.asciz "bus fault"
-.Lname_usage:	.asciz "usage fault"
-.Lname_other:	.asciz "unhandled trap"
-	.balign 2
+	mrs	r0, ipsr
+	ubfx	r0, r0, #0, #9
+	b	__gnat_fault_report
 	.size __gnat_fault_trap, . - __gnat_fault_trap
 
 	.thumb_func

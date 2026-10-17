@@ -942,6 +942,8 @@ class Stm32H7(arm.cortexm.CortexM7DF):
             "stm32h7_src/setup_pll.adb",
             "stm32h7_src/s-bbpara.ads",
             "stm32h7_src/s-bbbopa.ads",
+            "stm32h7_src/s-bbfaul.ads",
+            "stm32h7_src/s-bbfaul.adb",
         )
 
         # STM32H723/725/730/733/735 share one reference manual (RM0468), one
