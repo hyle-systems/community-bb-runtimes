@@ -101,26 +101,40 @@ _stm32_start_common:
            program that used the AXI SRAM). Both regions are zeroed here with
            64-bit stores while the data cache is still off, so every word
            carries a valid ECC before anything touches it; .axisram is copied
-           afterwards. The bounds come from the linker (the family's memory
-           map: 320 KB of AXI SRAM and 64 KB of ITCM, the default
-           TCM_AXI_SHARED option bytes); a device sharing the memory
-           differently faults here, which the fault routing reports at boot.
+           afterwards. The bounds come from the device's TCM_AXI_SHARED option
+           byte (see ecc_init), so every sharing boots with every word valid.
            About 200 us at 520 MHz. */
 ecc_init:
+        /* The sizes come from the device, not from the map: TCM_AXI_SHARED in
+           FLASH_OPTSR2_CUR (RM0468 4.9.24) gives 64, 128, 192 or 256 KB of ITCM
+           as (field + 1) * 64 KB, and the AXI SRAM is 384 KB minus that. The
+           two numbers are left in __ecc_itcm_bytes and __ecc_axisram_bytes (two
+           words the linker places outside .bss, so the later zeroing of .bss
+           keeps them) for inspection. The linker scripts describe the default
+           sharing; a device set otherwise has less AXI SRAM than they declare. */
+        ldr     r0,=0x52002070          /* FLASH_OPTSR2_CUR */
+        ldr     r0,[r0]
+        and     r0,r0,#3                /* TCM_AXI_SHARED */
+        adds    r0,#1
+        lsls    r4,r0,#16               /* ITCM bytes = (field + 1) * 64 KB */
+        ldr     r5,=0x60000             /* 384 KB */
+        subs    r5,r5,r4                /* AXI SRAM bytes */
+        ldr     r0,=__ecc_itcm_bytes
+        str     r4,[r0]
+        ldr     r0,=__ecc_axisram_bytes
+        str     r5,[r0]
         movs    r2,#0
         movs    r3,#0
         movw    r0,#:lower16:__axisram_start
         movt    r0,#:upper16:__axisram_start
-        movw    r1,#:lower16:__axisram_end
-        movt    r1,#:upper16:__axisram_end
+        adds    r1,r0,r5                /* end = start + the device's size */
 0:      cmp     r0,r1
         bhs     1f
         strd    r2,r3,[r0],#8
         b       0b
 1:      movw    r0,#:lower16:__itcm_start
         movt    r0,#:upper16:__itcm_start
-        movw    r1,#:lower16:__itcm_end
-        movt    r1,#:upper16:__itcm_end
+        adds    r1,r0,r4                /* end = start + the device's size */
 0:      cmp     r0,r1
         bhs     1f
         strd    r2,r3,[r0],#8

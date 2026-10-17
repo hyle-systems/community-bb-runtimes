@@ -161,6 +161,13 @@ SECTIONS
    . = ALIGN(0x8);    /* Align the stack to 64 bits */
    __bss_end = .;
 
+   /* Two words the start-up fills before .bss is zeroed, so outside it:
+      the ITCM and AXI SRAM sizes it initialised (from TCM_AXI_SHARED). */
+   __ecc_itcm_bytes = .;
+   . += 4;
+   __ecc_axisram_bytes = .;
+   . += 4;
+
    /* The interrupt and environment stacks start on a multiple of the
       stack guard's window (__stack_guard_bytes, a --defsym from the
       runtime's project file; 8 without it), so that the window sits

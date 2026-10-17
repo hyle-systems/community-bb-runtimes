@@ -63,6 +63,14 @@ The interrupt stack size is also configurable:
 $(profile_underscored)_$(target).Interrupt_Stack_Size = 1024
 ```
 
+The runtime's data, stacks and heap live in the DTCM; the `.axisram` section is the AXI SRAM. At
+start-up the ECC of the AXI SRAM and of the ITCM is initialised word by word, for exactly the sizes
+the device's `TCM_AXI_SHARED` option byte gives (64 KB ITCM / 320 KB AXI SRAM by default; 128/256,
+192/192 or 256/128 otherwise), so sub-word writes anywhere in them raise no RAMECC flag; the DTCM
+needs none (measured); SRAM1, SRAM2 and SRAM4 are the application's to write whole-word before any
+sub-word use. The linker scripts describe the default sharing: a device set otherwise has less AXI
+SRAM than they declare.
+
 `Stack_Guard = true` makes the runtime keep an MPU no-access window of `Stack_Guard_Bytes` at the
 bottom of every stack (each task's, the environment task's and the interrupt stack),
 re-programmed at each context switch, so that the first write past a stack's bottom is a
