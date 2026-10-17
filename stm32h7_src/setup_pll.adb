@@ -130,9 +130,17 @@ procedure Setup_Pll is
       elsif PLL_IN_Freq <= 8_000_000 then 2#10#
       else 2#11#);
 
-   --  Wide VCO range (192..836 MHz) unless the VCO only fits the medium one
+   --  The PLL1 input selects the VCO range (DS13313 6.3.11): an input of
+   --  1 to 2 MHz runs the medium range, 150 .. 420 MHz with every output
+   --  limited to 210 MHz (Table 40); an input of 2 to 16 MHz runs the wide
+   --  range, 192 .. 836 MHz (Table 39). Exactly 2 MHz is in both tables;
+   --  the wide range is taken.
 
-   PLL_VCO_Medium : constant Boolean := PLL_VCO_Freq < 192_000_000;
+   PLL_VCO_Medium : constant Boolean := PLL_IN_Freq < 2_000_000;
+
+   PLL_Medium_Out_Max : constant :=
+     (if Config.Voltage_Scaling = Config.VOS3 then 200_000_000
+      else 210_000_000);
 
    -----------------------
    -- Initialize_Clocks --
@@ -150,11 +158,26 @@ procedure Setup_Pll is
            & " divider must be between 1 and 16 MHz");
 
       pragma Compile_Time_Error
-        (Activate_PLL
-           and PLL_VCO_Freq not in PLL_VCO_Wide_Range
+        (Activate_PLL and PLL_VCO_Medium
            and PLL_VCO_Freq not in PLL_VCO_Medium_Range,
-         "Invalid PLL configuration. PLL1 VCO frequency must be in the"
-           & " range 192 .. 836 MHz (wide) or 150 .. 420 MHz (medium)");
+         "Invalid PLL configuration. A PLL1 input of 1 to 2 MHz selects the"
+           & " medium range: the VCO must be 150 .. 420 MHz (DS13313"
+           & " Table 40)");
+
+      pragma Compile_Time_Error
+        (Activate_PLL and not PLL_VCO_Medium
+           and PLL_VCO_Freq not in PLL_VCO_Wide_Range,
+         "Invalid PLL configuration. A PLL1 input of 2 to 16 MHz selects the"
+           & " wide range: the VCO must be 192 .. 836 MHz (DS13313"
+           & " Table 39)");
+
+      pragma Compile_Time_Error
+        (Activate_PLL and PLL_VCO_Medium
+           and (PLL_P_Freq > PLL_Medium_Out_Max
+                or (Config.PLL_Q_Enable and PLL_Q_Freq > PLL_Medium_Out_Max)
+                or (Config.PLL_R_Enable and PLL_R_Freq > PLL_Medium_Out_Max)),
+         "Invalid PLL configuration. In the medium range every PLL1 output"
+           & " is limited to 210 MHz (200 MHz at VOS3, DS13313 Table 40)");
 
       pragma Compile_Time_Error
         (Config.PLL_P_Div /= 1 and Config.PLL_P_Div mod 2 /= 0,

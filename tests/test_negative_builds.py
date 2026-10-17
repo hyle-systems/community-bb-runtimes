@@ -31,8 +31,9 @@ ROWS = [
     ("light", {"HPRE": "DIV1"}, "AXI/AHB clock above the maximum"),                # 520 MHz on the AXI
     ("light", {"D2PPRE1": "DIV1"}, "APB clock is above half"),                     # 260 MHz on APB1
     # The input range is coupled to the VCO range (DS13313 Table 39: wide 2-16 MHz; Table 40: medium 1-2 MHz)
-    ("light", {"PLL_M_Div": 8, "PLL_N_Mul": 520}, "2 and 16 MHz for the wide VCO range"),   # 1 MHz in, 520 MHz VCO
-    ("light", {"PLL_N_Mul": 20}, "1 and 2 MHz for the medium VCO range"),                   # 8 MHz in, 160 MHz VCO
+    ("light", {"PLL_M_Div": 8, "PLL_N_Mul": 400}, "medium range"),   # 1 MHz in selects the medium range: VCO 400 MHz is in it, but P out 400 MHz is above its 210 MHz
+    ("light", {"PLL_N_Mul": 20}, "wide range"),                      # 8 MHz in selects the wide range: VCO 160 MHz is below its 192 MHz
+    ("light", {"PLL_M_Div": 8, "PLL_N_Mul": 100}, "medium range"),    # 1 MHz in selects the medium range: VCO 100 MHz is below its 150 MHz
     # The guard-size option
     ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 100}, "Stack_Guard_Bytes must be"),
     ("light", {"Stack_Guard": True, "Stack_Guard_Bytes": 100}, "Stack_Guard_Bytes"),  # the option is meaningless in light and must not be accepted silently
