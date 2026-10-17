@@ -21,6 +21,7 @@ variable, else from the PATH.
 import argparse
 import os
 import pathlib
+import shlex
 import shutil
 import subprocess
 import sys
@@ -88,6 +89,8 @@ def main():
     ap.add_argument("--semihosting-port", type=int, default=4445)
     ap.add_argument("--working-dir", default=None, help="passed to pytest --working-dir")
     ap.add_argument("--log-dir", default=None, help="where the per-test logs go (default: <working-dir>/openocd-runs)")
+    ap.add_argument("--pytest-args", default="",
+                    help="extra arguments for pytest, replacing the default \"-q --tb=line\" (e.g. \"-vv --tb=short --keep-build-files\" to see a failing comparison in full)")
     ap.add_argument("testcases", nargs="*", default=DEFAULT_TESTCASES)
     args = ap.parse_args()
 
@@ -115,8 +118,9 @@ def main():
             "--target-if=openocd-gdbserver",
             f"--gdbserver-port={args.gdb_port}",
             f"--text-io-port={args.semihosting_port}",
-            "-q", "--tb=line", "-p", "no:cacheprovider",
+            "-p", "no:cacheprovider",
         ]
+        pytest_cmd += shlex.split(args.pytest_args) if args.pytest_args else ["-q", "--tb=line"]
         if args.working_dir:
             pytest_cmd.append(f"--working-dir={args.working_dir}")
 
