@@ -68,7 +68,7 @@ package body System.BB.CPU_Primitives is
    Reset_Vector             : constant Vector_Id :=  1;
    NMI_Vector               : constant Vector_Id :=  2;
    Hard_Fault_Vector        : constant Vector_Id :=  3;
-   Mem_Manage_Vector        : constant Vector_Id :=  4;
+   --  Mem_Manage_Vector    : constant Vector_Id :=  4; --  Never referenced
    Bus_Fault_Vector         : constant Vector_Id :=  5;
    Usage_Fault_Vector       : constant Vector_Id :=  6;
    SV_Call_Vector           : constant Vector_Id := 11;
@@ -114,17 +114,6 @@ package body System.BB.CPU_Primitives is
    procedure GNAT_Error_Handler (Trap : Vector_Id);
    pragma No_Return (GNAT_Error_Handler);
 
-   procedure Fault_Handler;
-   pragma Export (Asm, Fault_Handler, "__gnat_fault_trap");
-   pragma No_Return (Fault_Handler);
-   --  Target of the NMI, HardFault, MemManage, BusFault and UsageFault
-   --  vectors in a vector table that chooses to route them here (the
-   --  stm32h7xx handler.S does; a table that keeps the historical endless
-   --  loop is unaffected). The exception number is read from IPSR and the
-   --  fault reported through GNAT_Error_Handler, i.e. an exception raised
-   --  into the last-chance handler. Runs on the main stack in Handler mode,
-   --  so it is reachable even when a task stack has been destroyed.
-
    ---------------------
    -- MPU stack guard --
    ---------------------
@@ -132,7 +121,7 @@ package body System.BB.CPU_Primitives is
    --  Hyle Systems, 2026-10-17. When the crate option Stack_Guard is set,
    --  the MPU (PM0253 4.6) keeps a 32-byte no-access region at the lowest
    --  32-byte-aligned address of each stack, so the first write past the
-   --  bottom of a stack is a precise MemManage fault into Fault_Handler and
+   --  bottom of a stack is a precise MemManage fault into the fault trap and
    --  the last-chance handler ("memory management fault") instead of a
    --  silent walk into whatever lies below. Three regions are used: 0 for
    --  the running thread, re-programmed before every context switch from
@@ -465,8 +454,6 @@ package body System.BB.CPU_Primitives is
             raise Program_Error with "non-maskable interrupt";
          when Hard_Fault_Vector =>
             raise Program_Error with "hard fault";
-         when Mem_Manage_Vector =>
-            raise Storage_Error with "memory management fault";
          when Bus_Fault_Vector  =>
             raise Program_Error with "bus fault";
          when Usage_Fault_Vector =>
@@ -475,19 +462,6 @@ package body System.BB.CPU_Primitives is
             raise Program_Error with "unhandled trap";
       end case;
    end GNAT_Error_Handler;
-
-   -------------------
-   -- Fault_Handler --
-   -------------------
-
-   procedure Fault_Handler is
-      IPSR : Word;
-   begin
-      Asm ("mrs %0, IPSR",
-           Outputs  => Word'Asm_Output ("=r", IPSR),
-           Volatile => True);
-      GNAT_Error_Handler (Vector_Id (IPSR and 16#1FF#));
-   end Fault_Handler;
 
    ---------------
    -- Set_Guard --

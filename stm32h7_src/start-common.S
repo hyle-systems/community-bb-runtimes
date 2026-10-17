@@ -36,6 +36,24 @@
 	.type _stm32_start_common, %function
 _stm32_start_common:
 
+        /* The vector table from handler.S, in every profile, before the first
+           instruction that can fault. Upstream's start-rom.S carries a five-
+           entry table for the light runtime whose fault entries hang, and the
+           tasking runtimes installed handler.S's table only from
+           System.BB.CPU_Primitives, i.e. only in programs that use tasking.
+           The memory-management, bus and usage fault exceptions are enabled
+           here as well, so that a fault keeps its own name in the report
+           instead of escalating to HardFault. */
+        ldr     r0, =__vectors
+        ldr     r1, =0xE000ED08         /* SCB VTOR */
+        str     r0, [r1]
+        ldr     r1, =0xE000ED24         /* SCB SHCSR */
+        ldr     r2, [r1]
+        orr     r2, r2, #0x00070000     /* USGFAULTENA, BUSFAULTENA, MEMFAULTENA */
+        str     r2, [r1]
+        dsb
+        isb
+
         /************************
         * Enable debug Monitor *
         ************************/
