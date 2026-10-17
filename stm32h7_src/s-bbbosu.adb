@@ -195,7 +195,8 @@ package body System.BB.Board_Support is
       DTCM_SZ : constant Word := (DTCMCR / 8) and 16#F#;
    begin
       if DTCM_SZ /= 8 or else ITCM_SZ < 7 then
-         raise Program_Error with "TCM sizes differ from the stm32h7xx memory map";
+         raise Program_Error
+           with "TCM sizes differ from the stm32h7xx memory map";
       end if;
 
       Disable_Interrupts;

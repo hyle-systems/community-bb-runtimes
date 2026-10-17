@@ -176,10 +176,17 @@ package body System.BB.CPU_Primitives is
    Region_Interrupt   : constant Word := 1;
    Region_Environment : constant Word := 2;
 
-   Interrupt_Stack_Bottom : constant System.Address
-     with Import, External_Name => "__interrupt_stack_start";
-   Environment_Stack_Bottom : constant System.Address
-     with Import, External_Name => "__stack_start";
+   Interrupt_Stack_Start : constant Character
+     with Import, Convention => Asm,
+          External_Name => "__interrupt_stack_start";
+   Environment_Stack_Start : constant Character
+     with Import, Convention => Asm,
+          External_Name => "__stack_start";
+   --  Linker symbols: each stack's lowest address is the *address* of the
+   --  imported object (Interrupt_Stack_Start'Address), never its value --
+   --  the first version read the word stored there, i.e. uninitialised
+   --  RAM, and put regions 1 and 2 on an arbitrary window (found by
+   --  review and by tests/testcases/test_guard_regions, 2026-10-17).
 
    procedure Set_Guard (Region : Word; Stack_Bottom : System.Address);
    pragma Inline (Set_Guard);
@@ -380,8 +387,8 @@ package body System.BB.CPU_Primitives is
       if Stack_Guard then
          --  At least the three regions we use (DREGION, MPU_TYPE bits 15:8)
          pragma Assert ((MPU_TYPE / 256) mod 256 >= 3);
-         Set_Guard (Region_Interrupt, Interrupt_Stack_Bottom);
-         Set_Guard (Region_Environment, Environment_Stack_Bottom);
+         Set_Guard (Region_Interrupt, Interrupt_Stack_Start'Address);
+         Set_Guard (Region_Environment, Environment_Stack_Start'Address);
          MPU_CTRL := 2#101#;  --  ENABLE and PRIVDEFENA, HFNMIENA clear
          Asm ("dsb" & NL & "isb", Volatile => True);
       end if;

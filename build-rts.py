@@ -880,6 +880,16 @@ class CortexMArch_H7(arm.cortexm.CortexMArch):
 
 
 class ArmV7MArch_H7(ArmV7MArch_Patched):
+    def __init__(self):
+        super(ArmV7MArch_H7, self).__init__()
+        # The family's board support: the patched unit above plus the TCM
+        # size self-check. Registered here so that it replaces the
+        # stm32g4_src copy that ArmV7MArch_Patched installs; without these
+        # two lines the crates ship the G4 file and the family's is dead
+        # (found by tests/test_generated.py, 2026-10-17).
+        self.remove_source("s-bbbosu.adb")
+        self.add_gnarl_sources("stm32h7_src/s-bbbosu.adb")
+
     @property
     def parent(self):
         return CortexMArch_H7
