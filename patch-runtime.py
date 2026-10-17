@@ -316,6 +316,23 @@ def main():
             dirs_exist_ok=True,
         )
 
+    # Hyle Systems, 2026-10-17: units a target wants in a profile beyond the
+    # generator's scenarios. The stm32h7xx light-tasking profile takes the
+    # embedded profile's System.BB.Threads.Stack_Checking (s-btstch): the
+    # __gnat_stack_check that -fstack-check calls, which raises Storage_Error
+    # (under No_Exception_Propagation: straight to the last-chance handler) and
+    # depends only on units light-tasking already has. Linked only when an
+    # application uses -fstack-check.
+    extra_gnarl_sources = {
+        ("stm32h7xx", "light-tasking"): [
+            "bb-runtimes/gnat_rts_sources/include/rts-sources/gnarl/full/s-btstch.ads",
+            "bb-runtimes/gnat_rts_sources/include/rts-sources/gnarl/full/s-btstch.adb",
+        ],
+    }
+    for src in extra_gnarl_sources.get((target, profile), []):
+        src_path = pathlib.Path(__file__).parent / src
+        shutil.copy(src_path, runtime_dir / "gnarl" / src_path.name)
+
     generate_runtime_subdirs(runtime_dir)
 
 if __name__ == "__main__":

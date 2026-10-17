@@ -31,3 +31,19 @@ the memory below. The default memory map stays in force elsewhere (PRIVDEFENA), 
 HardFault and NMI handlers, each stack loses 32 to 63 bytes at its bottom, and applications that use the
 MPU themselves should start at region 3. Off by default. Measured on the NUCLEO-H723ZG, 2026-10-17: see
 the commit message.
+
+## Compiler stack checking (`-fstack-check`) in light-tasking
+
+The light-tasking profile carries the embedded profile's `System.BB.Threads.Stack_Checking`
+(`s-btstch`, copied in by `patch-runtime.py`), the `__gnat_stack_check` that `-fstack-check` calls at
+every subprogram entry; it raises `Storage_Error`, which under `No_Exception_Propagation` goes straight
+to the last-chance handler. Linked only when an application compiles with `-fstack-check`. **Size the
+stacks for it:** the compiler's generic probe asks for about 4 400 bytes free below each new frame
+(`sp - 4392` on this target), so every stack it can run on must hold its peak use plus that margin:
+the environment task's (`-Wl,--defsym=__stack_size=16384` for example), each task's `Storage_Size`,
+and the interrupt stack (`Interrupt_Stack_Size`, 8192 for example), because a checked prologue in a
+protected handler probes against the interrupt stack. With 4 KB stacks every first probe fails.
+Measured on the NUCLEO-H723ZG, 2026-10-17: ten induced overflows, ten `Storage_Error` reports from
+`s-btstch.adb`, no fault; the probe costs about 250 ns on an interrupt-to-pin path. The complete
+picture with the stack guard above: the probe catches overflows in checked Ada code before the frame is
+used, the MPU guard catches everything else at the boundary, and the fault routing reports what remains.
