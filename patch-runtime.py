@@ -294,6 +294,7 @@ def main():
             project_file_withs_ravenscar if has_libgnarl else project_file_withs_light
         ),
         "max_cpus": "2" if has_libgnarl else "1",
+        "has_tasking": "True" if has_libgnarl else "False",
     }
 
     target_templates_dir = (

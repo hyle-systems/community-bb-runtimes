@@ -45,6 +45,7 @@ with System.BB.Board_Parameters;
 with System.BB.MCU_Parameters;
 
 with STM32H7xx_Runtime_Config;
+with STM32H7xx_Runtime_Profile;
 
 package System.BB.Parameters is
    pragma Preelaborate (System.BB.Parameters);
@@ -105,6 +106,18 @@ package System.BB.Parameters is
 
    Stack_Guard : constant Boolean := STM32H7xx_Runtime_Config.Stack_Guard;
    Stack_Guard_Bytes : constant := STM32H7xx_Runtime_Config.Stack_Guard_Bytes;
+
+   --  The three options above act in the tasking runtimes only: the light
+   --  runtime has no interrupt stack, no context switch and no MPU code. A
+   --  light crate refuses them rather than accept a guard that guards
+   --  nothing (the defaults repeated here are the manifest's).
+   pragma Compile_Time_Error
+     (not STM32H7xx_Runtime_Profile.Has_Tasking
+        and then (Stack_Guard or else Stack_Guard_Bytes /= 32
+                  or else Interrupt_Stack_Size /= 1024),
+      "Stack_Guard, Stack_Guard_Bytes and Interrupt_Stack_Size have no"
+        & " effect in the light profile; remove them from the crate's"
+        & " configuration values");
    --  An MPU no-access region under every stack (System.BB.CPU_Primitives,
    --  "MPU stack guard"); off by default.
    --  Size of each of the interrupt stacks in bytes. While there nominally is

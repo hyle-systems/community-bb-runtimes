@@ -73,6 +73,9 @@ by default. `Stack_Guard_Bytes` sets the window: 32 (the default), 64, 128, 256,
 a frame whose first write lands more than the window below the previous stack pointer steps
 over it, so size the window to the largest frame of code that is not compiled with
 `-fstack-check`.
+
+`Interrupt_Stack_Size`, `Stack_Guard` and `Stack_Guard_Bytes` act in the tasking runtimes
+only; the light crate refuses them at compile time if set away from their defaults.
 """
 
 authors = ["AdaCore", "Daniel King", "Hyle Systems S.R.L."]
