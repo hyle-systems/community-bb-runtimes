@@ -62,6 +62,13 @@ The interrupt stack size is also configurable:
 [configuration.values]
 $(profile_underscored)_$(target).Interrupt_Stack_Size = 1024
 ```
+
+`Stack_Guard = true` makes the runtime keep an MPU no-access region of 32 bytes at the
+bottom of every stack (each task's, the environment task's and the interrupt stack),
+re-programmed at each context switch, so that the first write past a stack's bottom is a
+memory-management fault reported through the last-chance handler instead of a silent
+corruption of the memory below. It costs each stack 32 to 63 bytes and uses MPU regions 0 to
+2; applications using the MPU themselves should start at region 3. Off by default.
 """
 
 authors = ["AdaCore", "Daniel King", "Hyle Systems S.R.L."]
@@ -105,6 +112,7 @@ D2PPRE2 = { type = "Enum", values = ["DIV1", "DIV2", "DIV4", "DIV8", "DIV16"], d
 D3PPRE = { type = "Enum", values = ["DIV1", "DIV2", "DIV4", "DIV8", "DIV16"], default = "DIV2" }
 
 Interrupt_Stack_Size = { type = "Integer", first = 1, default = 1024 }
+Stack_Guard = { type = "Boolean", default = false }
 
 [[depends-on]]
 gnat_arm_elf = "^16"

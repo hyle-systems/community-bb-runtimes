@@ -125,6 +125,56 @@ package body System.BB.CPU_Primitives is
    --  into the last-chance handler. Runs on the main stack in Handler mode,
    --  so it is reachable even when a task stack has been destroyed.
 
+   ---------------------
+   -- MPU stack guard --
+   ---------------------
+
+   --  Hyle Systems, 2026-10-17. When the crate option Stack_Guard is set,
+   --  the MPU (PM0253 4.6) keeps a 32-byte no-access region at the lowest
+   --  32-byte-aligned address of each stack, so the first write past the
+   --  bottom of a stack is a precise MemManage fault into Fault_Handler and
+   --  the last-chance handler ("memory management fault") instead of a
+   --  silent walk into whatever lies below. Three regions are used: 0 for
+   --  the running thread, re-programmed before every context switch from
+   --  the next thread's Bottom_Of_Stack; 1 for the interrupt stack; 2 for
+   --  the environment task's stack (its static copy, so the first thread is
+   --  covered before any switch). The default memory map stays in force
+   --  everywhere else (PRIVDEFENA), so cache attributes are untouched; the
+   --  MPU is off in HardFault and NMI handlers (HFNMIENA = 0). A guard costs
+   --  its stack between 32 and 63 bytes at the bottom. Applications that
+   --  use the MPU themselves should start at region 3. Between the moment
+   --  the guard is moved and the PendSV switch, the outgoing thread runs a
+   --  few instructions with the incoming thread's guard, never within its
+   --  own stack's range.
+
+   Stack_Guard : constant Boolean := System.BB.Parameters.Stack_Guard;
+
+   MPU_TYPE : Word with Volatile, Address => 16#E000_ED90#;
+   MPU_CTRL : Word with Volatile, Address => 16#E000_ED94#;
+   MPU_RBAR : Word with Volatile, Address => 16#E000_ED9C#;
+   MPU_RASR : Word with Volatile, Address => 16#E000_EDA0#;
+
+   Guard_Bytes : constant := 32;
+   --  The smallest region (SIZE = 4, PM0253 Table 90)
+
+   Guard_RASR : constant Word := 16#1000_0000# or (4 * 2) or 1;
+   --  XN; AP = 000, no access for anyone (Table 93); SIZE = 4 at bits 5:1;
+   --  ENABLE. TEX, C, B, S are irrelevant for a region nobody may touch.
+
+   Region_Thread      : constant Word := 0;
+   Region_Interrupt   : constant Word := 1;
+   Region_Environment : constant Word := 2;
+
+   Interrupt_Stack_Bottom : constant System.Address
+     with Import, External_Name => "__interrupt_stack_start";
+   Environment_Stack_Bottom : constant System.Address
+     with Import, External_Name => "__stack_start";
+
+   procedure Set_Guard (Region : Word; Stack_Bottom : System.Address);
+   pragma Inline (Set_Guard);
+   --  Program Region as the no-access window at the lowest 32-byte-aligned
+   --  address at or above Stack_Bottom, then make it take effect.
+
    procedure Set_Selected_Priority_Group;
    --  assign the priority group specified by BB.Parameters
 
@@ -316,6 +366,15 @@ package body System.BB.CPU_Primitives is
 
       SHCSR := SHCSR or 16#7_0000#;
 
+      if Stack_Guard then
+         --  At least the three regions we use (DREGION, MPU_TYPE bits 15:8)
+         pragma Assert ((MPU_TYPE / 256) mod 256 >= 3);
+         Set_Guard (Region_Interrupt, Interrupt_Stack_Bottom);
+         Set_Guard (Region_Environment, Environment_Stack_Bottom);
+         MPU_CTRL := 2#101#;  --  ENABLE and PRIVDEFENA, HFNMIENA clear
+         Asm ("dsb" & NL & "isb", Volatile => True);
+      end if;
+
       --  Call context switch hardware initialization
       Initialize_Context_Switch;
 
@@ -349,6 +408,14 @@ package body System.BB.CPU_Primitives is
       --  Interrupts must be disabled at this point
 
       pragma Assert (PRIMASK = 1);
+
+      if Stack_Guard then
+         --  The thread about to run is First_Thread; PendSV will make it
+         --  Running_Thread. Its guard goes in before the switch.
+         Set_Guard
+           (Region_Thread,
+            System.BB.Threads.Queues.First_Thread.Bottom_Of_Stack);
+      end if;
 
       Trigger_Context_Switch;
 
@@ -403,6 +470,20 @@ package body System.BB.CPU_Primitives is
            Volatile => True);
       GNAT_Error_Handler (Vector_Id (IPSR and 16#1FF#));
    end Fault_Handler;
+
+   ---------------
+   -- Set_Guard --
+   ---------------
+
+   procedure Set_Guard (Region : Word; Stack_Bottom : System.Address) is
+      Base : constant Word :=
+        (Word (System.Storage_Elements.To_Integer (Stack_Bottom))
+         + (Guard_Bytes - 1)) and not Word'(Guard_Bytes - 1);
+   begin
+      MPU_RBAR := Base or 16#10# or Region;  --  VALID: selects the region
+      MPU_RASR := Guard_RASR;
+      Asm ("dsb" & NL & "isb", Volatile => True);
+   end Set_Guard;
 
    ----------------------------------
    -- Interrupt_Request_Handler -- --
