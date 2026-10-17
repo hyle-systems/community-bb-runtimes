@@ -19,7 +19,8 @@ package body Guard_Probe is
 
    procedure Report (Region : Unsigned_32;
                      Label  : String;
-                     Bottom : System.Address)
+                     Bottom : System.Address;
+                     Exact  : Boolean)
    is
       RBAR, RASR : Unsigned_32;
       Base       : Integer_Address;
@@ -37,8 +38,10 @@ package body Guard_Probe is
          & " size" & Natural'Image (2 ** (Size_Code + 1))
          & " no access " & Boolean'Image ((Shift_Right (RASR, 24) and 7) = 0)
          & " xn " & Boolean'Image ((Shift_Right (RASR, 28) and 1) = 1)
-         & " base in window "
-         & Boolean'Image (Base >= Lower and then Base < Lower + Guard_Bytes));
+         & (if Exact
+            then " base at bottom " & Boolean'Image (Base = Lower)
+            else " base in window "
+              & Boolean'Image (Base >= Lower and then Base < Lower + Guard_Bytes)));
    end Report;
 
    ----------------
@@ -48,7 +51,7 @@ package body Guard_Probe is
    task body Probe_Task is
       Self : constant System.BB.Threads.Thread_Id := System.BB.Threads.Thread_Self;
    begin
-      Report (0, "task", Self.Bottom_Of_Stack);
+      Report (0, "task", Self.Bottom_Of_Stack, Exact => False);
       Ada.Synchronous_Task_Control.Set_True (Task_Done);
    end Probe_Task;
 

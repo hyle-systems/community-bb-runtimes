@@ -19,7 +19,7 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 INSTALL = REPO / "install"
 TESTCASE = REPO / "tests" / "testcases" / "hello_world"
 
-# (profile, configuration values, fragment of the expected error; None = must build)
+# (profile, configuration values, fragment of the expected error; None = must build[, extra linker switches])
 ROWS = [
     ("light", {}, None),
     # The clock tree's own checks (DS13313 Tables 12 and 39-40, RM0468 Table 16 and 8.7.11)
@@ -37,17 +37,26 @@ ROWS = [
     # The guard-size option
     ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 100}, "Stack_Guard_Bytes must be"),
     ("light", {"Stack_Guard": True, "Stack_Guard_Bytes": 100}, "Stack_Guard_Bytes"),  # the option is meaningless in light and must not be accepted silently
+    # Every guarded stack is at least four times the window (the window sits inside the stack at its bottom)
+    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 512}, "four times"),   # the default 1 KB interrupt stack against a 512 B window
+    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 256}, None),           # exactly four times: builds
+    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 1024, "Interrupt_Stack_Size": 4096},
+     "environment stack smaller than four guard windows", ["-Wl,--defsym=__stack_size=3072"]),  # a 3 KB environment stack against a 1 KB window: the linker refuses
+    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 1024, "Interrupt_Stack_Size": 4096},
+     None, ["-Wl,--defsym=__stack_size=4096"]),                                       # exactly four windows: links
 ]
 
 
 def row_id(row):
-    profile, values, expected = row
-    return profile + ":" + (",".join(f"{k}={v}" for k, v in values.items()) or "default") + (":builds" if expected is None else "")
+    profile, values, expected = row[:3]
+    return (profile + ":" + (",".join(f"{k}={v}" for k, v in values.items()) or "default")
+            + (":" + ",".join(row[3]) if len(row) > 3 else "") + (":builds" if expected is None else ""))
 
 
 @pytest.mark.parametrize("row", ROWS, ids=row_id)
 def test_negative_build(row, tmp_path):
-    profile, values, expected = row
+    profile, values, expected = row[:3]
+    switches = row[3] if len(row) > 3 else []
     crate_dir = INSTALL / f"{profile}-stm32h7xx"
     if not crate_dir.is_dir():
         pytest.skip(f"{profile} crate not generated")
@@ -57,6 +66,12 @@ def test_negative_build(row, tmp_path):
     working_dir = tmp_path / "crate"
     harness = TestHarness(TESTCASE, working_dir, target_info)
     harness.setup()
+    if switches:
+        gpr = working_dir / "test.gpr"
+        text = gpr.read_text(encoding="utf-8")
+        marker = '"-Wl,--fatal-warnings"'
+        assert marker in text
+        gpr.write_text(text.replace(marker, marker + "".join(f', "{sw}"' for sw in switches)), encoding="utf-8")
     r = subprocess.run(["alr", "build"], cwd=working_dir, capture_output=True, text=True, errors="replace")
     output = r.stdout + r.stderr
     if expected is None:

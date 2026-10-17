@@ -149,6 +149,17 @@ package body System.BB.CPU_Primitives is
       or else Guard_Bytes mod 32 /= 0,
       "Stack_Guard_Bytes must be 32, 64, 128, 256, 512 or 1024");
 
+   --  The window sits inside the stack at its bottom, so a guarded stack
+   --  must be at least four times the window to keep two windows of room.
+   --  The interrupt stack's size is a crate constant: checked here. The
+   --  environment stack's is the linker's: an ASSERT in the linker script.
+   --  A task's is the application's: its rule, stated in the manifest.
+   pragma Compile_Time_Error
+     (System.BB.Parameters.Stack_Guard
+        and then System.BB.Parameters.Interrupt_Stack_Size < 4 * Guard_Bytes,
+      "Interrupt_Stack_Size must be at least four times Stack_Guard_Bytes"
+        & " when Stack_Guard is on (the window sits inside the stack)");
+
    Guard_Size_Code : constant :=
      (case Guard_Bytes is
          when 32 => 4, when 64 => 5, when 128 => 6,
@@ -179,7 +190,7 @@ package body System.BB.CPU_Primitives is
 
    procedure Set_Guard (Region : Word; Stack_Bottom : System.Address);
    pragma Inline (Set_Guard);
-   --  Program Region as the no-access window at the lowest 32-byte-aligned
+   --  Program Region as the no-access window at the lowest Guard_Bytes-aligned
    --  address at or above Stack_Bottom, then make it take effect.
 
    procedure Set_Selected_Priority_Group;

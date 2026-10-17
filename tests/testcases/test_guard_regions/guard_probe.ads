@@ -14,11 +14,13 @@ package Guard_Probe is
 
    procedure Report (Region : Interfaces.Unsigned_32;
                      Label  : String;
-                     Bottom : System.Address);
+                     Bottom : System.Address;
+                     Exact  : Boolean);
    --  Select Region, print its enable, size, access and execute-never
-   --  fields and whether its base lies in [Bottom, Bottom + Guard_Bytes - 1],
-   --  the window the runtime documents (the lowest Guard_Bytes-aligned
-   --  address at or above the stack's bottom).
+   --  fields and, when Exact, whether its base is Bottom itself (the
+   --  interrupt and environment stacks, which the linker aligns to the
+   --  window), otherwise whether it lies in [Bottom, Bottom + Guard_Bytes - 1]
+   --  (a task's stack, whose object the compiler aligns to 8).
 
    Task_Done : Ada.Synchronous_Task_Control.Suspension_Object;
 

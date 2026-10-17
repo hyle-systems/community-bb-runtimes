@@ -161,15 +161,26 @@ SECTIONS
    . = ALIGN(0x8);    /* Align the stack to 64 bits */
    __bss_end = .;
 
+   /* The interrupt and environment stacks start on a multiple of the
+      stack guard's window (__stack_guard_bytes, a --defsym from the
+      runtime's project file; 8 without it), so that the window sits
+      exactly at each stack's bottom and costs exactly one window. */
+   . = ALIGN(DEFINED (__stack_guard_bytes) ? __stack_guard_bytes : 8);
    __interrupt_stack_start = .;
    *(.noinit.interrupt_stacks)
    . = ALIGN(0x8);
    __interrupt_stack_end = .;
 
+   . = ALIGN(DEFINED (__stack_guard_bytes) ? __stack_guard_bytes : 8);
    __stack_start = .;
    . += DEFINED (__stack_size) ? __stack_size : _DEFAULT_STACK_SIZE;
    . = ALIGN(0x8);
    __stack_end = .;
+   /* With the guard on, every guarded stack holds at least four windows;
+      the environment stack's size is decided here, so it is checked here. */
+   ASSERT (!DEFINED (__stack_guard_bytes)
+           || (__stack_end - __stack_start) >= 4 * __stack_guard_bytes,
+           "environment stack smaller than four guard windows (__stack_size against Stack_Guard_Bytes)");
 
    _end = .;
    __heap_start = .;

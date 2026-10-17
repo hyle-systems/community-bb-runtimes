@@ -5,6 +5,8 @@ with Ada.Text_IO;
 with Interfaces; use Interfaces;
 with System;
 
+with Resident; pragma Unreferenced (Resident);
+
 procedure Test is
    MPU_CTRL : Unsigned_32 with Volatile, Import,
      Address => System'To_Address (16#E000_ED94#);

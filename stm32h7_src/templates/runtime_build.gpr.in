@@ -62,6 +62,15 @@ project Runtime_Build is
   type Loaders is ("ROM", "RAM", "USER");
   Loader : Loaders := external("LOADER", "ROM");
 
+  --  The stack guard's window, for the linker script: the interrupt and
+  --  environment stacks are aligned to it and the environment stack must
+  --  hold four of them (an ASSERT in the script). 8 when the guard is off.
+  Stack_Guard_Align := "8";
+  case $(profile_underscored)_Stm32h7xx_Config.Stack_Guard is
+    when "True"  => Stack_Guard_Align := $(profile_underscored)_Stm32h7xx_Config.Stack_Guard_Bytes;
+    when others  => null;
+  end case;
+
   Linker_Switches := ();
 
   case Loader is
@@ -71,7 +80,8 @@ project Runtime_Build is
          "-L" & Runtime_Build'Project_Dir & "/ld",
          "-L" & Runtime_Build'Project_Dir & "/ld/flash-" & ROM_Size,
          "-L" & Runtime_Build'Project_Dir & "/ld/ram-" & RAM_Size,
-         "-T" & "common-ROM.ld");
+         "-T" & "common-ROM.ld",
+         "-Wl,--defsym=__stack_guard_bytes=" & Stack_Guard_Align);
 
     when "RAM" =>
       Linker_Switches := Linker_Switches &
@@ -79,7 +89,8 @@ project Runtime_Build is
          "-L" & Runtime_Build'Project_Dir & "/ld",
          "-L" & Runtime_Build'Project_Dir & "/ld/flash-" & ROM_Size,
          "-L" & Runtime_Build'Project_Dir & "/ld/ram-" & RAM_Size,
-         "-T" & "common-RAM.ld");
+         "-T" & "common-RAM.ld",
+         "-Wl,--defsym=__stack_guard_bytes=" & Stack_Guard_Align);
 
     when "USER" =>
   end case;

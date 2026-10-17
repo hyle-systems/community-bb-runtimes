@@ -21,8 +21,8 @@ procedure Test is
      with Import, Convention => Asm, External_Name => "__stack_start";
 begin
    Ada.Text_IO.Put_Line ("MPU_CTRL =" & Unsigned_32'Image (MPU_CTRL));
-   Guard_Probe.Report (1, "interrupt stack", Interrupt_Stack_Start'Address);
-   Guard_Probe.Report (2, "environment stack", Environment_Stack_Start'Address);
+   Guard_Probe.Report (1, "interrupt stack", Interrupt_Stack_Start'Address, Exact => True);
+   Guard_Probe.Report (2, "environment stack", Environment_Stack_Start'Address, Exact => True);
    Ada.Synchronous_Task_Control.Suspend_Until_True (Guard_Probe.Task_Done);
    Ada.Text_IO.Put_Line ("===TEST COMPLETE===");
 end Test;
