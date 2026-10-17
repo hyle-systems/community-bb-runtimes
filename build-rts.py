@@ -863,6 +863,28 @@ class Stm32F4(arm.cortexm.CortexM4F):
         self.add_linker_switch("-Wl,--no-warn-rwx-segments", loader="RAM")
 
 
+class CortexMArch_H7(arm.cortexm.CortexMArch):
+    def __init__(self):
+        super(CortexMArch_H7, self).__init__()
+        # Faults reported, not looped (Hyle Systems, 2026-10-17): the family's
+        # copy of the generic Armv7-M CPU primitives adds Fault_Handler, exported
+        # as __gnat_fault_trap, the target of the five fault vectors in the
+        # family's handler.S (SVD2Ada's default sends them to `fault: b fault`,
+        # a silent loop). It reads IPSR and raises the fault through
+        # GNAT_Error_Handler into the last-chance handler. The upstream unit is
+        # otherwise unchanged; a candidate for an upstream change in bb-runtimes.
+        # Done at this level because CortexMArch is where the generic unit is
+        # registered (compare the s-bbbosu.adb precedent, one level down).
+        self.remove_source("s-bbcppr.adb")
+        self.add_gnarl_sources("stm32h7_src/s-bbcppr.adb")
+
+
+class ArmV7MArch_H7(ArmV7MArch_Patched):
+    @property
+    def parent(self):
+        return CortexMArch_H7
+
+
 class Stm32H7(arm.cortexm.CortexM7DF):
     @property
     def name(self):
@@ -870,7 +892,7 @@ class Stm32H7(arm.cortexm.CortexM7DF):
 
     @property
     def parent(self):
-        return ArmV7MArch_Patched
+        return ArmV7MArch_H7
 
     @property
     def use_semihosting_io(self):

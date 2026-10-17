@@ -14,11 +14,16 @@ __vectors:
 	/* Cortex-M core interrupts */
 	.word   0                    /* stack top address */
 	.word   fault                /* 1 Reset.  */
-	.word   fault                /* 2 NMI. */
-	.word   fault                /* 3 Hard fault. */
-	.word   fault                /* 4 Mem manage. */
-	.word   fault                /* 5 Bus fault. */
-	.word   fault                /* 6 Usage fault. */
+	/* Hyle Systems, 2026-10-17: the five fault vectors go to __gnat_fault_trap
+	   (System.BB.CPU_Primitives.Fault_Handler: IPSR read, the fault raised into
+	   the last-chance handler) instead of the SVD2Ada default `fault: b fault`,
+	   which left a faulted board silent until reset. The weak stub below keeps
+	   a profile without the Ada handler linking. Reserved vectors unchanged. */
+	.word   __gnat_fault_trap    /* 2 NMI. */
+	.word   __gnat_fault_trap    /* 3 Hard fault. */
+	.word   __gnat_fault_trap    /* 4 Mem manage. */
+	.word   __gnat_fault_trap    /* 5 Bus fault. */
+	.word   __gnat_fault_trap    /* 6 Usage fault. */
 	.word   fault                /* 7 reserved. */
 	.word   fault                /* 8 reserved. */
 	.word   fault                /* 9 reserved. */
@@ -222,6 +227,13 @@ __gnat_pend_sv_trap:
 __gnat_sys_tick_trap:
 0:	b 0b
 	.size __gnat_sys_tick_trap, . - __gnat_sys_tick_trap
+
+	.thumb_func
+.weak __gnat_fault_trap
+.type __gnat_fault_trap, %function
+__gnat_fault_trap:
+0:	b 0b
+	.size __gnat_fault_trap, . - __gnat_fault_trap
 
 	.thumb_func
 fault:	b fault
