@@ -117,6 +117,18 @@ class TestHarness:
 
         return self._opt_module.crate_config_values(self._target_info)
 
+    def linker_switches(self) -> List[str]:
+        """
+        Call linker_switches() in the testcase's opt.py file, if it exists.
+        This returns a list of extra linker switches for the test program
+        (e.g. a --defsym that sizes the environment stack).
+        """
+        if self._opt_module is None:
+            return []
+        if not hasattr(self._opt_module, "linker_switches"):
+            return []
+        return self._opt_module.linker_switches(self._target_info)
+
     def source_dirs(self) -> List[str]:
         """
         Call source_dirs() in the testcase's opt.py file, if it exists.
@@ -142,6 +154,7 @@ class TestHarness:
 
             source_dirs = [self._testcase_sources_dir.absolute()]
             source_dirs += [self._testcase_sources_dir / sd for sd in self.source_dirs()]
+            extra_linker_switches = "".join(f', "{sw}"' for sw in self.linker_switches())
 
             f.write(
                 f"""
@@ -161,7 +174,7 @@ project Test is
 
     package Linker is
         for Switches ("Ada") use Runtime_Linker_Switches &
-          ("-Wl,--gc-sections", "-Wl,--fatal-warnings");
+          ("-Wl,--gc-sections", "-Wl,--fatal-warnings"{extra_linker_switches});
     end Linker;
 end Test;
 """
@@ -195,6 +208,23 @@ end Test;
 
         runtime_crate_name = self._target_info.runtime_crate_name
         runtime_crate_dir = self._target_info.runtime_crate_dir.absolute()
+
+        # A testcase that sets runtime crate configuration values builds its
+        # own copy of the runtime crate, from scratch, in its working
+        # directory. Sharing the installed crate between tests with different
+        # configurations is not reliable: the runtime's units are recompiled,
+        # but the library's installed ALIs are not always refreshed in the
+        # same build, and the next test's binder then reports
+        # "must be recompiled" (seen on stm32h7xx, 2026-10-18). Tests without
+        # configuration values keep sharing the installed crate.
+        if self.crate_config_values():
+            private_crate = self._testcase_working_dir / runtime_crate_dir.name
+            shutil.copytree(
+                src=runtime_crate_dir,
+                dst=private_crate,
+                ignore=shutil.ignore_patterns("obj", "adalib", "lib", "alire", "*.o", "*.ali"),
+            )
+            runtime_crate_dir = private_crate
 
         dependencies = {runtime_crate_name: "*"}
         dependencies |= self.external_crates()
