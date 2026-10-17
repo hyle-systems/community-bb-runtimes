@@ -104,6 +104,7 @@ package System.BB.Parameters is
      STM32H7xx_Runtime_Config.Interrupt_Stack_Size;
 
    Stack_Guard : constant Boolean := STM32H7xx_Runtime_Config.Stack_Guard;
+   Stack_Guard_Bytes : constant := STM32H7xx_Runtime_Config.Stack_Guard_Bytes;
    --  An MPU no-access region under every stack (System.BB.CPU_Primitives,
    --  "MPU stack guard"); off by default.
    --  Size of each of the interrupt stacks in bytes. While there nominally is

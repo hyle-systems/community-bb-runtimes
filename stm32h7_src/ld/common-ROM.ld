@@ -131,6 +131,13 @@ SECTIONS
   __data_words = (__data_end - __data_start) >> 2;
 
   __ccmdata_load = __rom_end + (__data_words << 2);
+  /* The ECC regions the start-up zeroes with 64-bit stores (start-common.S,
+     ecc_init): the whole AXI SRAM and the whole ITCM of the memory map. */
+  __axisram_start = ORIGIN(axisram);
+  __axisram_end = ORIGIN(axisram) + LENGTH(axisram);
+  __itcm_start = ORIGIN(itcm);
+  __itcm_end = ORIGIN(itcm) + LENGTH(itcm);
+
   .axisram : AT (__ccmdata_load)
   {
     __ccmdata_start = .;

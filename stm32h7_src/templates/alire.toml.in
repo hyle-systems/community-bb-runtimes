@@ -67,8 +67,12 @@ $(profile_underscored)_$(target).Interrupt_Stack_Size = 1024
 bottom of every stack (each task's, the environment task's and the interrupt stack),
 re-programmed at each context switch, so that the first write past a stack's bottom is a
 memory-management fault reported through the last-chance handler instead of a silent
-corruption of the memory below. It costs each stack 32 to 63 bytes and uses MPU regions 0 to
-2; applications using the MPU themselves should start at region 3. Off by default.
+corruption of the memory below. It costs each stack its size to twice its size minus one byte
+and uses MPU regions 0 to 2; applications using the MPU themselves should start at region 3. Off
+by default. `Stack_Guard_Bytes` sets the window: 32 (the default), 64, 128, 256, 512 or 1024;
+a frame whose first write lands more than the window below the previous stack pointer steps
+over it, so size the window to the largest frame of code that is not compiled with
+`-fstack-check`.
 """
 
 authors = ["AdaCore", "Daniel King", "Hyle Systems S.R.L."]
@@ -113,6 +117,7 @@ D3PPRE = { type = "Enum", values = ["DIV1", "DIV2", "DIV4", "DIV8", "DIV16"], de
 
 Interrupt_Stack_Size = { type = "Integer", first = 1, default = 1024 }
 Stack_Guard = { type = "Boolean", default = false }
+Stack_Guard_Bytes = { type = "Integer", first = 32, last = 1024, default = 32 }
 
 [[depends-on]]
 gnat_arm_elf = "^16"

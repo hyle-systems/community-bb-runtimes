@@ -182,7 +182,22 @@ package body System.BB.Board_Support is
    ----------------------
 
    procedure Initialize_Board is
+      --  TCM size self-check (Hyle Systems, 2026-10-17): the family's memory
+      --  map puts the runtime in a 128 KB DTCM and assumes at least 64 KB of
+      --  ITCM, the default TCM_AXI_SHARED option bytes. The core reports the
+      --  sizes in ITCMCR / DTCMCR (PM0253 Table 105: SZ at bits 6:3, the size
+      --  2**(SZ - 1) KB; 7 = 64 KB, 8 = 128 KB). A device or option-byte
+      --  configuration that differs is reported through the last-chance
+      --  handler before anything relies on the map.
+      ITCMCR : Word with Volatile, Address => 16#E000_EF90#;
+      DTCMCR : Word with Volatile, Address => 16#E000_EF94#;
+      ITCM_SZ : constant Word := (ITCMCR / 8) and 16#F#;
+      DTCM_SZ : constant Word := (DTCMCR / 8) and 16#F#;
    begin
+      if DTCM_SZ /= 8 or else ITCM_SZ < 7 then
+         raise Program_Error with "TCM sizes differ from the stm32h7xx memory map";
+      end if;
+
       Disable_Interrupts;
 
       --  Because we operate the SysTick clock as a periodic timer, and 24 bits

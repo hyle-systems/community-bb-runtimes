@@ -47,3 +47,20 @@ Measured on the NUCLEO-H723ZG, 2026-10-17: ten induced overflows, ten `Storage_E
 `s-btstch.adb`, no fault; the probe costs about 250 ns on an interrupt-to-pin path. The complete
 picture with the stack guard above: the probe catches overflows in checked Ada code before the frame is
 used, the MPU guard catches everything else at the boundary, and the fault routing reports what remains.
+
+## ECC RAM initialisation and the TCM size check at start-up
+
+The AXI SRAM and the ITCM carry 8 ECC bits per 64-bit word (RM0468 2.4). The first sub-word write to a
+word nobody has written since power-up, by the start-up's own 32-bit copy of `.axisram`, by a task or by
+a DMA, is a read-modify-write against an ECC that is garbage, and the RAMECC monitor flags it (measured:
+D1 monitor 1 read 0x7 after one program that used the AXI SRAM). The family's `start-common.S` zeroes
+both regions with 64-bit stores before the data cache is enabled, so every word carries a valid ECC
+before anything touches it (about 200 µs at 520 MHz). The bounds are the linker's `__axisram_*` and
+`__itcm_*`, the memory map's 320 KB and 64 KB of the default TCM_AXI_SHARED option bytes.
+`Initialize_Board` then checks the core's ITCMCR / DTCMCR sizes against that map (DTCM 128 KB, ITCM at
+least 64 KB) and raises `Program_Error` into the last-chance handler if they differ. The RAMECC monitors
+themselves are left to the application: read them once after start-up, clear them, then arm the ECC
+interrupt if wanted.
+
+The stack guard's window is configurable, `Stack_Guard_Bytes` = 32 (default), 64, 128, 256, 512 or
+1024: size it to the largest frame of code that is not compiled with `-fstack-check`.

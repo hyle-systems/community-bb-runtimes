@@ -154,11 +154,22 @@ package body System.BB.CPU_Primitives is
    MPU_RBAR : Word with Volatile, Address => 16#E000_ED9C#;
    MPU_RASR : Word with Volatile, Address => 16#E000_EDA0#;
 
-   Guard_Bytes : constant := 32;
-   --  The smallest region (SIZE = 4, PM0253 Table 90)
+   Guard_Bytes : constant := System.BB.Parameters.Stack_Guard_Bytes;
+   pragma Compile_Time_Error
+     ((Guard_Bytes / 32) not in 1 | 2 | 4 | 8 | 16 | 32
+      or else Guard_Bytes mod 32 /= 0,
+      "Stack_Guard_Bytes must be 32, 64, 128, 256, 512 or 1024");
 
-   Guard_RASR : constant Word := 16#1000_0000# or (4 * 2) or 1;
-   --  XN; AP = 000, no access for anyone (Table 93); SIZE = 4 at bits 5:1;
+   Guard_Size_Code : constant :=
+     (case Guard_Bytes is
+         when 32 => 4, when 64 => 5, when 128 => 6,
+         when 256 => 7, when 512 => 8, when 1024 => 9,
+         when others => 0);
+   --  MPU_RASR SIZE: the region is 2**(SIZE + 1) bytes (PM0253 Table 90)
+   --  The guard window, a power of two from 32 (the smallest region) to 1024
+
+   Guard_RASR : constant Word := 16#1000_0000# or (Guard_Size_Code * 2) or 1;
+   --  XN; AP = 000, no access for anyone (Table 93); SIZE at bits 5:1;
    --  ENABLE. TEX, C, B, S are irrelevant for a region nobody may touch.
 
    Region_Thread      : constant Word := 0;

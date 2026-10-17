@@ -126,6 +126,13 @@ SECTIONS
     __data_end = .;
   } > sram_da
 
+  /* The ECC regions the start-up zeroes with 64-bit stores (start-common.S,
+     ecc_init): the whole AXI SRAM and the whole ITCM of the memory map. */
+  __axisram_start = ORIGIN(axisram);
+  __axisram_end = ORIGIN(axisram) + LENGTH(axisram);
+  __itcm_start = ORIGIN(itcm);
+  __itcm_end = ORIGIN(itcm) + LENGTH(itcm);
+
   .axisram :
   {
     __ccmdata_start = .;

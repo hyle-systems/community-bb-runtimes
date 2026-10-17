@@ -73,6 +73,42 @@ _stm32_start_common:
            the TCMs (PM0253 4.9.1; already enabled by hardware at reset on
            the H7, so this only confirms them). */
 
+        /* ECC initialisation of the AXI SRAM and the ITCM (Hyle Systems,
+           2026-10-17). Their ECC is computed over 64-bit words (RM0468 2.4:
+           8 ECC bits per 64-bit word for AXI-SRAM and ITCM-RAM), so the
+           first sub-word write to a word nobody has written since power-up,
+           by this start-up's 32-bit copy of .axisram, by a task or by a DMA,
+           is a read-modify-write against an ECC that is garbage, and the
+           RAMECC monitor flags it (measured: D1 monitor 1 read 0x7 after one
+           program that used the AXI SRAM). Both regions are zeroed here with
+           64-bit stores while the data cache is still off, so every word
+           carries a valid ECC before anything touches it; .axisram is copied
+           afterwards. The bounds come from the linker (the family's memory
+           map: 320 KB of AXI SRAM and 64 KB of ITCM, the default
+           TCM_AXI_SHARED option bytes); a device sharing the memory
+           differently faults here, which the fault routing reports at boot.
+           About 200 us at 520 MHz. */
+ecc_init:
+        movs    r2,#0
+        movs    r3,#0
+        movw    r0,#:lower16:__axisram_start
+        movt    r0,#:upper16:__axisram_start
+        movw    r1,#:lower16:__axisram_end
+        movt    r1,#:upper16:__axisram_end
+0:      cmp     r0,r1
+        bhs     1f
+        strd    r2,r3,[r0],#8
+        b       0b
+1:      movw    r0,#:lower16:__itcm_start
+        movt    r0,#:upper16:__itcm_start
+        movw    r1,#:lower16:__itcm_end
+        movt    r1,#:upper16:__itcm_end
+0:      cmp     r0,r1
+        bhs     1f
+        strd    r2,r3,[r0],#8
+        b       0b
+1:      dsb
+
 init_cache:
         /********************
          * Enable I/D cache *
