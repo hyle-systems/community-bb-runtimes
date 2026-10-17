@@ -1,10 +1,10 @@
 AXI SRAM (initialised by the start-up): 0
 ITCM (initialised by the start-up): 0
 shared AXI/ITCM: 0
-D0TCM (stack and heap): 6
-D1TCM (stack and heap): 6
-SRAM1 (application's): 6
-SRAM2 (application's): 6
-SRAM4 (application's): 6
+D0TCM (heap): 0
+D1TCM (heap): 0
+SRAM1 (application's): 3
+SRAM2 (application's): 3
+SRAM4 (application's): 3
 backup RAM (not written): 0
 ===TEST COMPLETE===

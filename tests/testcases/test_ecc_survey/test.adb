@@ -1,6 +1,12 @@
 --  A survey of every RAM ECC monitor after sub-word writes into each RAM:
 --  which memories the start-up leaves with valid ECC everywhere, and which
---  it leaves to the application. Meaningful only on the first run after a
+--  it leaves to the application. Measured 2026-10-17 after a power cycle
+--  (NUCLEO-H723ZG): AXI SRAM, ITCM and the shared monitor 0; both DTCM
+--  banks 0 - the DTCM raises nothing on sub-word first touches, so the
+--  stack and heap area needs no initialisation; SRAM1, SRAM2 and SRAM4
+--  3 (single error corrected and double error detected), so a program
+--  must write those whole-word before any sub-word use after power-up;
+--  backup RAM 0, untouched. Meaningful only on the first run after a
 --  POWER CYCLE: a reset keeps the SRAM contents and their ECC bits, so a
 --  word written by an earlier program stays valid. The expected output is
 --  the prediction for the power-cycled case; the survey is skipped unless
@@ -28,10 +34,13 @@ procedure Test is
 
    type Byte_Array is array (1 .. 1024) of Unsigned_8;
    type Byte_Array_Access is access Byte_Array;
-   Heap_Block : constant Byte_Array_Access := new Byte_Array;
-
-   Stack_Block : Byte_Array with Volatile;
-   --  On the environment stack, below everything written so far in this run
+   Heap_Block_1 : constant Byte_Array_Access := new Byte_Array;
+   Heap_Block_2 : constant Byte_Array_Access := new Byte_Array;
+   --  Two kilobytes of the DTCM heap: no program of the gate allocates, so
+   --  after a power cycle these words are as the power-up left them, even
+   --  though the previously flashed program ran once before the harness
+   --  took the board. (A stack block would not do: every program's
+   --  environment stack covers the same addresses.)
 begin
    RCC_AHB2ENR := RCC_AHB2ENR or 2#11# * 2 ** 29;   -- SRAM1EN, SRAM2EN
    RCC_AHB4ENR := RCC_AHB4ENR or 2 ** 28;           -- BKPRAMEN
@@ -48,8 +57,8 @@ begin
    ECC_Probe.Touch (AXI_Last_KB, 1024);
    ECC_Probe.Clean_Data_Cache (AXI_Last_KB, 1024);
    ECC_Probe.Touch (ITCM_Last_KB, 1024);
-   ECC_Probe.Touch (Stack_Block'Address, Stack_Block'Length);
-   ECC_Probe.Touch (Heap_Block.all'Address, Byte_Array'Length);
+   ECC_Probe.Touch (Heap_Block_1.all'Address, Byte_Array'Length);
+   ECC_Probe.Touch (Heap_Block_2.all'Address, Byte_Array'Length);
    ECC_Probe.Touch (SRAM1_First, 1024);
    ECC_Probe.Clean_Data_Cache (SRAM1_First, 1024);
    ECC_Probe.Touch (SRAM2_First, 1024);
@@ -60,8 +69,8 @@ begin
    ECC_Probe.Report ("AXI SRAM (initialised by the start-up)", ECC_Probe.D1_AXI_SRAM);
    ECC_Probe.Report ("ITCM (initialised by the start-up)", ECC_Probe.D1_ITCM);
    ECC_Probe.Report ("shared AXI/ITCM", ECC_Probe.D1_Shared);
-   ECC_Probe.Report ("D0TCM (stack and heap)", ECC_Probe.D1_D0TCM);
-   ECC_Probe.Report ("D1TCM (stack and heap)", ECC_Probe.D1_D1TCM);
+   ECC_Probe.Report ("D0TCM (heap)", ECC_Probe.D1_D0TCM);
+   ECC_Probe.Report ("D1TCM (heap)", ECC_Probe.D1_D1TCM);
    ECC_Probe.Report ("SRAM1 (application's)", ECC_Probe.D2_SRAM1);
    ECC_Probe.Report ("SRAM2 (application's)", ECC_Probe.D2_SRAM2);
    ECC_Probe.Report ("SRAM4 (application's)", ECC_Probe.D3_SRAM4);
