@@ -6,6 +6,7 @@ import queue
 import select
 import shutil
 import signal
+import struct
 import socket
 import subprocess
 import threading
@@ -268,18 +269,55 @@ class OpenOcdInterface(GdbTargetInterface):
     def enable_semihosting(self):
         self.monitor_command("arm semihosting enable")
 
+    _ram_image = False
+
+    @staticmethod
+    def _load_segments(elf: pathlib.Path):
+        """An ELF32 file's entry point and its PT_LOAD segments with file
+        contents, as (physical address, size) pairs (little-endian)."""
+        data = elf.read_bytes()
+        assert data[:4] == b"\x7fELF" and data[4] == 1, "not an ELF32 file"
+        e_entry, e_phoff = struct.unpack_from("<II", data, 0x18)
+        e_phentsize, e_phnum = struct.unpack_from("<HH", data, 0x2A)
+        segments = []
+        for i in range(e_phnum):
+            off = e_phoff + i * e_phentsize
+            p_type, _, _, p_paddr, p_filesz, p_memsz = struct.unpack_from("<IIIIII", data, off)
+            if p_type == 1 and p_filesz > 0:  # PT_LOAD
+                segments.append((p_paddr, p_memsz))
+        return e_entry, segments
+
     def reset(self):
-        self.monitor_command("reset halt")
+        # An image loaded into RAM is already positioned (see load): a reset
+        # here would boot the program in flash, whose start-up may overwrite
+        # the RAM the image sits in.
+        if not self._ram_image:
+            self.monitor_command("reset halt")
 
     def load(self, timeout_sec=30.0):
         # A GDB built without XML support (e.g. the one bundled with the
         # gnat_arm_elf toolchain) cannot read OpenOCD's memory map, so GDB's
         # own "load" writes flash with plain memory writes, which OpenOCD
         # silently drops. Let OpenOCD program the flash itself instead.
+        #
+        # An image whose load segments are all in RAM (no flash address) is
+        # loaded with load_image after a reset halt, and the stack pointer
+        # and program counter are taken from the image's vector table at its
+        # lowest load address; the test then runs it from there.
         path = str(self.executable_file.absolute()).replace("\\", "/")
-        self.monitor_command(
-            f"flash write_image erase {{{path}}}", timeout_sec=timeout_sec
-        )
+        entry, segments = self._load_segments(self.executable_file)
+        self._ram_image = bool(segments) and all(a >= 0x2000_0000 for a, _ in segments)
+        if self._ram_image:
+            # The vector table starts the segment that holds the entry point
+            base = next(a for a, n in segments if a <= (entry & ~1) < a + n)
+            self.monitor_command("reset halt")
+            self.monitor_command(f"load_image {{{path}}}", timeout_sec=timeout_sec)
+            self.monitor_command(f"reg sp [mrw {base:#x}]")
+            self.monitor_command(f"reg pc [expr {{[mrw {base + 4:#x}] & 0xFFFFFFFE}}]")
+        else:
+            self.monitor_command(
+                f"flash write_image erase {{{path}}}", timeout_sec=timeout_sec
+            )
 
 
 class StUtilInterface(GdbTargetInterface):

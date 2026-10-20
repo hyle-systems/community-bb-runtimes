@@ -44,8 +44,13 @@ class TestHarness:
         self._opt_module = module
 
     def build(self):
-        """Invoke alr build on the test case"""
-        return subprocess.run(args=["alr", "build"], cwd=self._testcase_working_dir)
+        """Invoke alr build on the test case (extra gprbuild arguments from
+        the testcase's build_args() go after "--", e.g. -XLOADER=RAM)"""
+        args = ["alr", "build"]
+        extra = self.build_args()
+        if extra:
+            args += ["--"] + extra
+        return subprocess.run(args=args, cwd=self._testcase_working_dir)
 
     def setup(self):
         """Setup the test harness"""
@@ -117,6 +122,30 @@ class TestHarness:
 
         return self._opt_module.crate_config_values(self._target_info)
 
+    def build_args(self) -> List[str]:
+        """
+        Call build_args() in the testcase's opt.py file, if it exists.
+        This returns a list of extra arguments for gprbuild (e.g. a scenario
+        variable such as -XLOADER=RAM).
+        """
+        if self._opt_module is None:
+            return []
+        if not hasattr(self._opt_module, "build_args"):
+            return []
+        return self._opt_module.build_args(self._target_info)
+
+    def compiler_switches(self) -> List[str]:
+        """
+        Call compiler_switches() in the testcase's opt.py file, if it exists.
+        This returns a list of extra Ada compiler switches for the test
+        program's own units (e.g. -fstack-check), not for the runtime.
+        """
+        if self._opt_module is None:
+            return []
+        if not hasattr(self._opt_module, "compiler_switches"):
+            return []
+        return self._opt_module.compiler_switches(self._target_info)
+
     def linker_switches(self) -> List[str]:
         """
         Call linker_switches() in the testcase's opt.py file, if it exists.
@@ -155,6 +184,15 @@ class TestHarness:
             source_dirs = [self._testcase_sources_dir.absolute()]
             source_dirs += [self._testcase_sources_dir / sd for sd in self.source_dirs()]
             extra_linker_switches = "".join(f', "{sw}"' for sw in self.linker_switches())
+            # The test's own last-chance handler, if any, keeps the default
+            # switches: a handler compiled with -fstack-check re-raises from its
+            # own prologue when it is entered below the stack's limit.
+            compiler_package = (
+                "    package Compiler is\n"
+                "        for Switches (\"Ada\") use (" + ", ".join(f'"{sw}"' for sw in self.compiler_switches()) + ");\n"
+                "        for Switches (\"test_lch.adb\") use ();\n"
+                "    end Compiler;\n"
+                if self.compiler_switches() else "")
 
             f.write(
                 f"""
@@ -172,7 +210,7 @@ project Test is
 
     Runtime_Linker_Switches := {runtime_linker_switches};
 
-    package Linker is
+{compiler_package}    package Linker is
         for Switches ("Ada") use Runtime_Linker_Switches &
           ("-Wl,--gc-sections", "-Wl,--fatal-warnings"{extra_linker_switches});
     end Linker;
