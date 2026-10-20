@@ -1,0 +1,4 @@
+configured CPU clock MHz = 400
+LSE ready: TRUE
+runtime second against the crystal, within 2 %: TRUE
+===TEST COMPLETE===

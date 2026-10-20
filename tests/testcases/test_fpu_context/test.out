@@ -1,0 +1,5 @@
+chain A exact: TRUE
+chain B exact: TRUE
+main chain exact: TRUE
+handler: served 1000 sum exact TRUE
+===TEST COMPLETE===

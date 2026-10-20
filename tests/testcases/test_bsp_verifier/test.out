@@ -1,0 +1,20 @@
+BSP Verification Testsuite
+****************************************
+Test: c_rf04_04
+Check delay-until statement semantics. Non tasking case
+Passed: (A): Delay lapsed at least 1.0 seconds
+Note: (B) - Negative delay lapsed for 0 Milliseconds
+Note: (C) - Zero delay lapsed for 0 Milliseconds
+Passed: (D): Delay was at least Duration'Small seconds
+****************************************
+Test: c_ri04_01
+Check the granularity of the clock
+Passed: Clock granularity is less than 15 microseconds
+****************************************
+Test: basic_tasking
+Check the functionality of various constructs
+Passed: Suspension object successfully signalled
+Passed: Protected procedure successfully called
+Passed: Protected action completed successfully
+Passed: Protected entry successfully awaited and returned
+===TEST COMPLETE===

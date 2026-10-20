@@ -54,6 +54,9 @@ ROWS = [
     ("light", {"Supply_Configuration": "SMPS_2V5_Supplies_External_LDO_Bypass"}, None),
     ("light", {"Supply_Configuration": "Bypass"}, None),
     ("light", {"Supply_Configuration": "Foo"}, "Supply_Configuration"),  # an unknown value must be refused (an unknown *variable* is silently ignored by Alire)
+    # The flash-size variants (L1): the 128 KB and 512 KB maps must link a small program
+    ("light", {"MCU_Flash_Memory_Size": "B"}, None),
+    ("light", {"MCU_Flash_Memory_Size": "E"}, None),
 ]
 
 

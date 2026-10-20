@@ -1,0 +1,4 @@
+data cache on: TRUE
+without maintenance, stale transfers seen: TRUE
+with clean / invalidate / barriers, transfers in error: 0 of 10000
+===TEST COMPLETE===
