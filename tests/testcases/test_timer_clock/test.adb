@@ -37,9 +37,12 @@ procedure Test is
    T0, T1 : Time;
    C2_0, C2_1, C1_0, C1_1 : Unsigned_32;
 
-   function Ratio_X100 (Counts : Unsigned_32; Per_Second : Long_Float; Elapsed : Duration)
+   --  Ada's conversion to Integer rounds to nearest: no "+ 0.5" here. The C
+   --  idiom double-rounds, and with a measured ratio within 1e-6 of one it
+   --  flipped the line between 100 and 101 from run to run (2026-10-21).
+   function Ratio_X1000 (Counts : Unsigned_32; Per_Second : Long_Float; Elapsed : Duration)
      return Integer
-   is (Integer (Long_Float (Counts) / (Per_Second * Long_Float (Elapsed)) * 100.0 + 0.5));
+   is (Integer (Long_Float (Counts) / (Per_Second * Long_Float (Elapsed)) * 1000.0));
 begin
    RCC_APB1LENR := RCC_APB1LENR or 1;
    RCC_APB2ENR  := RCC_APB2ENR or 1;
@@ -55,11 +58,11 @@ begin
    T1 := Clock;  C2_1 := TIM2_CNT;  C1_1 := TIM1_CNT;
 
    Ada.Text_IO.Put_Line
-     ("TIM2 (APB1 x 2) ratio x100 ="
-      & Integer'Image (Ratio_X100 (C2_1 - C2_0, 2.0 * Long_Float (APB1), To_Duration (T1 - T0))));
+     ("TIM2 (APB1 x 2) ratio x1000 ="
+      & Integer'Image (Ratio_X1000 (C2_1 - C2_0, 2.0 * Long_Float (APB1), To_Duration (T1 - T0))));
    Ada.Text_IO.Put_Line
-     ("TIM1 (APB2 x 2 / 65536) ratio x100 ="
-      & Integer'Image (Ratio_X100 ((C1_1 - C1_0) and 16#FFFF#, 2.0 * Long_Float (APB2) / 65536.0,
+     ("TIM1 (APB2 x 2 / 65536) ratio x1000 ="
+      & Integer'Image (Ratio_X1000 ((C1_1 - C1_0) and 16#FFFF#, 2.0 * Long_Float (APB2) / 65536.0,
                                     To_Duration (T1 - T0))));
    Ada.Text_IO.Put_Line ("===TEST COMPLETE===");
 end Test;
