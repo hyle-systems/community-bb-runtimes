@@ -203,18 +203,10 @@ procedure Setup_Pll is
       SW_Value : CFGR_SW_Field;
 
    begin
-      --  Supply configuration (RM0468 6.4.1): the STM32H72x/H73x line powers
-      --  the core domain from the internal LDO (no SMPS step-down converter
-      --  on these parts). Then wait for the voltage levels to be valid.
-
-      declare
-         CR3 : CR3_Register := PWR_Periph.CR3;
-      begin
-         CR3.BYPASS := 0;
-         CR3.LDOEN  := 1;
-         CR3.SDEN   := 0;
-         PWR_Periph.CR3 := CR3;
-      end;
+      --  The supply configuration (PWR_CR3's lower byte, written once after
+      --  a power-on reset) is the start-up's, from the crate option
+      --  Supply_Configuration, before any RAM write; here only the wait for
+      --  valid voltage levels is repeated before the voltage scaling changes.
 
       loop
          exit when PWR_Periph.CSR1.ACTVOSRDY = 1;

@@ -44,6 +44,16 @@ ROWS = [
      "environment stack smaller than four guard windows", ["-Wl,--defsym=__stack_size=3072"]),  # a 3 KB environment stack against a 1 KB window: the linker refuses
     ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 1024, "Interrupt_Stack_Size": 4096},
      None, ["-Wl,--defsym=__stack_size=4096"]),                                       # exactly four windows: links
+    # The supply configuration (RM0468 Table 30): every value must build; only LDO can run on this board
+    ("light", {"Supply_Configuration": "SMPS"}, None),
+    ("light", {"Supply_Configuration": "SMPS_1V8_Supplies_LDO"}, None),
+    ("light", {"Supply_Configuration": "SMPS_2V5_Supplies_LDO"}, None),
+    ("light", {"Supply_Configuration": "SMPS_1V8_Supplies_External_And_LDO"}, None),
+    ("light", {"Supply_Configuration": "SMPS_2V5_Supplies_External_And_LDO"}, None),
+    ("light", {"Supply_Configuration": "SMPS_1V8_Supplies_External_LDO_Bypass"}, None),
+    ("light", {"Supply_Configuration": "SMPS_2V5_Supplies_External_LDO_Bypass"}, None),
+    ("light", {"Supply_Configuration": "Bypass"}, None),
+    ("light", {"Supply_Configuration": "Foo"}, "Supply_Configuration"),  # an unknown value must be refused (an unknown *variable* is silently ignored by Alire)
 ]
 
 

@@ -63,6 +63,18 @@ The interrupt stack size is also configurable:
 $(profile_underscored)_$(target).Interrupt_Stack_Size = 1024
 ```
 
+`Supply_Configuration` is the board's core-supply arrangement, RM0468 Table 30: `LDO` (row 1, the
+default: the NUCLEO-H723ZG and every part without the SMPS step-down converter), `SMPS` (row 2, the
+core from the converter, LDO bypassed), `SMPS_1V8_Supplies_LDO` / `SMPS_2V5_Supplies_LDO` (row 3),
+`SMPS_1V8_Supplies_External_And_LDO` / `SMPS_2V5_Supplies_External_And_LDO` (row 4),
+`SMPS_1V8_Supplies_External_LDO_Bypass` / `SMPS_2V5_Supplies_External_LDO_Bypass` (row 5), `Bypass`
+(row 6). The converter exists on some parts only (by ST's numbering the STM32H725 and STM32H735; their
+datasheet is not filed here yet) and bypass only where the converter does. The start-up writes the
+arrangement once into PWR_CR3, before anything touches RAM, and waits for the voltage levels to be
+valid. The register is write-once until a power-on reset: a changed value takes effect after a power
+cycle, and an arrangement the board is not wired for leaves the core unsupplied until one. Read the
+board's schematic before changing it.
+
 The runtime's data, stacks and heap live in the DTCM; the `.axisram` section is the AXI SRAM. At
 start-up the ECC of the AXI SRAM and of the ITCM is initialised word by word, for exactly the sizes
 the device's `TCM_AXI_SHARED` option byte gives (64 KB ITCM / 320 KB AXI SRAM by default; 128/256,
@@ -139,6 +151,7 @@ D2PPRE1 = { type = "Enum", values = ["DIV1", "DIV2", "DIV4", "DIV8", "DIV16"], d
 D2PPRE2 = { type = "Enum", values = ["DIV1", "DIV2", "DIV4", "DIV8", "DIV16"], default = "DIV2" }
 D3PPRE = { type = "Enum", values = ["DIV1", "DIV2", "DIV4", "DIV8", "DIV16"], default = "DIV2" }
 
+Supply_Configuration = { type = "Enum", values = ["LDO", "SMPS", "SMPS_1V8_Supplies_LDO", "SMPS_2V5_Supplies_LDO", "SMPS_1V8_Supplies_External_And_LDO", "SMPS_2V5_Supplies_External_And_LDO", "SMPS_1V8_Supplies_External_LDO_Bypass", "SMPS_2V5_Supplies_External_LDO_Bypass", "Bypass"], default = "LDO" }
 Interrupt_Stack_Size = { type = "Integer", first = 1, default = 1024 }
 Stack_Guard = { type = "Boolean", default = false }
 Stack_Guard_Bytes = { type = "Integer", first = 32, last = 1024, default = 32 }

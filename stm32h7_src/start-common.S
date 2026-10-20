@@ -54,6 +54,25 @@ _stm32_start_common:
         dsb
         isb
 
+        /* The core's supply arrangement (RM0468 6.4, Table 30), from the crate
+           option Supply_Configuration through __supply_cr3 (a --defsym from the
+           runtime's project file): the lower byte of PWR_CR3, written once after
+           a power-on reset and before the voltage scaling, the clock change and
+           - per 6.4.1 - any write to RAM, so it is the first thing after the
+           vector table. The upper bits are kept. Then wait until the voltage
+           levels are valid (ACTVOSRDY in PWR_CSR1). An arrangement the board is
+           not wired for never becomes valid: the wait is where that shows. */
+        ldr     r0, =0x5802480C         /* PWR_CR3 */
+        ldr     r1, [r0]
+        bic     r1, r1, #0x3F
+        ldr     r2, =__supply_cr3
+        orr     r1, r1, r2
+        str     r1, [r0]
+        ldr     r0, =0x58024804         /* PWR_CSR1 */
+1:      ldr     r1, [r0]
+        tst     r1, #0x2000             /* ACTVOSRDY */
+        beq     1b
+
         /************************
         * Enable debug Monitor *
         ************************/

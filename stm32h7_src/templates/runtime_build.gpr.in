@@ -71,6 +71,21 @@ project Runtime_Build is
     when others  => null;
   end case;
 
+  --  The supply configuration's PWR_CR3 lower byte (RM0468 Table 30), for
+  --  the start-up, which writes it once before any RAM access.
+  Supply_CR3 := "2";
+  case $(profile_underscored)_Stm32h7xx_Config.Supply_Configuration is
+    when "LDO" => Supply_CR3 := "2";
+    when "SMPS" => Supply_CR3 := "4";
+    when "SMPS_1V8_Supplies_LDO" => Supply_CR3 := "22";
+    when "SMPS_2V5_Supplies_LDO" => Supply_CR3 := "38";
+    when "SMPS_1V8_Supplies_External_And_LDO" => Supply_CR3 := "30";
+    when "SMPS_2V5_Supplies_External_And_LDO" => Supply_CR3 := "46";
+    when "SMPS_1V8_Supplies_External_LDO_Bypass" => Supply_CR3 := "29";
+    when "SMPS_2V5_Supplies_External_LDO_Bypass" => Supply_CR3 := "45";
+    when "Bypass" => Supply_CR3 := "1";
+  end case;
+
   Linker_Switches := ();
 
   case Loader is
@@ -81,7 +96,8 @@ project Runtime_Build is
          "-L" & Runtime_Build'Project_Dir & "/ld/flash-" & ROM_Size,
          "-L" & Runtime_Build'Project_Dir & "/ld/ram-" & RAM_Size,
          "-T" & "common-ROM.ld",
-         "-Wl,--defsym=__stack_guard_bytes=" & Stack_Guard_Align);
+         "-Wl,--defsym=__stack_guard_bytes=" & Stack_Guard_Align,
+         "-Wl,--defsym=__supply_cr3=" & Supply_CR3);
 
     when "RAM" =>
       Linker_Switches := Linker_Switches &
@@ -90,7 +106,8 @@ project Runtime_Build is
          "-L" & Runtime_Build'Project_Dir & "/ld/flash-" & ROM_Size,
          "-L" & Runtime_Build'Project_Dir & "/ld/ram-" & RAM_Size,
          "-T" & "common-RAM.ld",
-         "-Wl,--defsym=__stack_guard_bytes=" & Stack_Guard_Align);
+         "-Wl,--defsym=__stack_guard_bytes=" & Stack_Guard_Align,
+         "-Wl,--defsym=__supply_cr3=" & Supply_CR3);
 
     when "USER" =>
   end case;
