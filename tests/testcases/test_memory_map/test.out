@@ -1,0 +1,4 @@
+.axisram: in region TRUE value ok TRUE
+.sram12: in region TRUE read back TRUE
+.sram4: in region TRUE read back TRUE
+===TEST COMPLETE===

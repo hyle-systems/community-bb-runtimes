@@ -81,7 +81,14 @@ the device's `TCM_AXI_SHARED` option byte gives (64 KB ITCM / 320 KB AXI SRAM by
 192/192 or 256/128 otherwise), so sub-word writes anywhere in them raise no RAMECC flag; the DTCM
 needs none (measured); SRAM1, SRAM2 and SRAM4 are the application's to write whole-word before any
 sub-word use. The linker scripts describe the default sharing: a device set otherwise has less AXI
-SRAM than they declare.
+SRAM than they declare. **A DMA cannot reach the DTCM**, so a DMA buffer goes in `.axisram` or in
+the two sections for the RAMs made for it, `.sram12` (SRAM1 and SRAM2, D2) and `.sram4` (SRAM4, D3),
+through `Linker_Section`; those two carry no initial values, the application enables their clocks
+(`RCC_AHB2ENR` for SRAM1/2) and writes them whole-word first. All three are cacheable in the default
+memory map: clean the cache before a DMA reads a buffer and invalidate it after a DMA writes one,
+with the barriers of errata ES0491 2.1.4, or give the buffer an MPU region of its own (the stack
+guard uses regions 0 to 2). Text buffers for semihosting output are read by the host behind the
+cache as well; the runtime's own live in the DTCM.
 
 `Stack_Guard = true` makes the runtime keep an MPU no-access window of `Stack_Guard_Bytes` at the
 bottom of every stack (each task's, the environment task's and the interrupt stack),

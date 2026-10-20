@@ -202,6 +202,29 @@ SECTIONS
 
   __bss_words = (__bss_end - __bss_start) >> 2;
 
+  /* The RAMs a DMA can reach - SRAM1 and SRAM2 (D2, contiguous) and SRAM4
+     (D3); a DMA cannot address the DTCM, where everything else lives. No
+     initial values: the application enables their clocks (RCC_AHB2ENR
+     SRAM1EN/SRAM2EN for the first two) and writes them whole-word before any
+     sub-word use, their ECC being undefined after power-up. They are
+     cacheable in the default memory map: a DMA buffer here needs the cache
+     maintenance, or an MPU region of its own (the stack guard uses 0 to 2). */
+  .sram12 (NOLOAD) : {
+    . = ALIGN(8);
+    __sram12_start = .;
+    *(.sram12 .sram12.*)
+    . = ALIGN(8);
+    __sram12_end = .;
+  } > sram12
+
+  .sram4 (NOLOAD) : {
+    . = ALIGN(8);
+    __sram4_start = .;
+    *(.sram4 .sram4.*)
+    . = ALIGN(8);
+    __sram4_end = .;
+  } > sram4
+
   /* DWARF debug sections.
      Symbols in the DWARF debugging sections are relative to the beginning
      of the section so we begin them at 0.  */
