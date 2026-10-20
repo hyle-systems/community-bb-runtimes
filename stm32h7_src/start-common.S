@@ -250,6 +250,51 @@ tcm_init:
         dsb
         isb
 
+guard_init:
+        /* Stack_Guard, a crate option of the tasking profiles: the two
+           static guards - MPU region 1, a no-access window at the bottom of
+           the interrupt stack, and region 2, the same under the environment
+           stack - programmed here for every program. The tasking runtime's
+           Initialize_CPU programs the same two again and adds each task's
+           as it runs; a light-tasking program with no tasking unit never
+           runs it, and had no guard at all (finding 6, 2026-10-21).
+           __stack_guard_bytes is the crate's --defsym: the window, 32 .. 1024
+           (a power of two) when the option is on, 8 (an alignment only) when
+           it is off, and the block is skipped below 32; the weak reference
+           reads 0 under a user linker script that omits it. The values
+           mirror Set_Guard in s-bbcppr.adb: RBAR = base | VALID | region,
+           RASR = XN | SIZE << 1 | ENABLE with AP = 000 (no access for
+           anyone), SIZE = log2 (bytes) - 1 (PM0253 Tables 90 and 93),
+           MPU_CTRL = ENABLE | PRIVDEFENA. */
+        .weak   __stack_guard_bytes
+        ldr     r0, =__stack_guard_bytes
+        cmp     r0, #32
+        blo     end
+        clz     r1, r0
+        rsb     r1, r1, #30             /* SIZE = log2 (bytes) - 1 */
+        lsl     r1, r1, #1
+        orr     r1, r1, #0x10000000     /* XN */
+        orr     r1, r1, #1              /* ENABLE */
+        sub     r4, r0, #1              /* the window's alignment mask */
+        ldr     r2, =0xE000ED9C         /* MPU_RBAR; RASR at +4 */
+        ldr     r3, =__interrupt_stack_start
+        add     r3, r3, r4
+        bic     r3, r3, r4              /* rounded up to the window */
+        orr     r3, r3, #0x11           /* VALID, region 1 */
+        str     r3, [r2]
+        str     r1, [r2, #4]
+        ldr     r3, =__stack_start
+        add     r3, r3, r4
+        bic     r3, r3, r4
+        orr     r3, r3, #0x12           /* VALID, region 2 */
+        str     r3, [r2]
+        str     r1, [r2, #4]
+        movs    r3, #5                  /* ENABLE, PRIVDEFENA */
+        ldr     r2, =0xE000ED94         /* MPU_CTRL */
+        str     r3, [r2]
+        dsb
+        isb
+
 end:
         bx lr
         .size _stm32_start_common, . - _stm32_start_common

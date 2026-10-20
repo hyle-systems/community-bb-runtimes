@@ -107,8 +107,9 @@ pragma Compile_Time_Error
      and then My_Task_Stack_Size < 4 * Light_Tasking_Stm32h7xx_Config.Stack_Guard_Bytes,
    "My_Task's stack is smaller than four guard windows");
 ```
-Like the rest of the tasking runtime, the guard is armed when the program uses tasking; a program
-without tasks links none of it and has neither the guard nor its checks. The guard uses MPU regions 0 to 2; applications using the MPU themselves should start at region 3. Off
+The two static guards - the interrupt stack's and the environment stack's - are programmed by the
+start-up for every program, tasking or not; the running task's follows once the tasking runtime is
+up (a program without a tasking unit has only the environment stack, and it is guarded). The guard uses MPU regions 0 to 2; applications using the MPU themselves should start at region 3. Off
 by default. `Stack_Guard_Bytes` sets the window: 32 (the default), 64, 128, 256, 512 or 1024;
 a frame whose first write lands more than the window below the previous stack pointer steps
 over it, so size the window to the largest frame of code that is not compiled with

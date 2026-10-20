@@ -62,5 +62,10 @@ least 64 KB) and raises `Program_Error` into the last-chance handler if they dif
 themselves are left to the application: read them once after start-up, clear them, then arm the ECC
 interrupt if wanted.
 
+Regions 1 and 2 are programmed by the start-up (`start-common.S`, `guard_init`) for every program,
+tasking or not, from the crate's `__stack_guard_bytes`; region 0 follows the running task once the
+tasking runtime is up. A program with no tasking unit has only the environment stack, and it is
+guarded; `test_guard_taskless` and `test_guard_taskless_hit` hold this.
+
 The stack guard's window is configurable, `Stack_Guard_Bytes` = 32 (default), 64, 128, 256, 512 or
 1024: size it to the largest frame of code that is not compiled with `-fstack-check`.
