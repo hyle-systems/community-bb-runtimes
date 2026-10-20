@@ -1,6 +1,6 @@
 """Negative builds for the stm32h7xx crates: configurations that must be refused at compile time, each
 with the message expected, plus the default configuration as the positive control. No board needed; each row
-builds the hello_world testcase against the generated crate with the row's configuration values, so the
+builds the hello_world testcase (or the one the row names) against the generated crate with the row's configuration values, so the
 runtime's compile-time checks (setup_pll.adb, s-bbcppr.adb) are what refuse it.
 
 Run with ``pytest test_negative_builds.py`` from ``tests/`` after ``../generate-runtimes.sh --target stm32h7xx``.
@@ -17,9 +17,10 @@ from support.target_info import TargetInfo
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 INSTALL = REPO / "install"
-TESTCASE = REPO / "tests" / "testcases" / "hello_world"
+TESTCASES = REPO / "tests" / "testcases"
 
-# (profile, configuration values, fragment of the expected error; None = must build[, extra linker switches])
+# (profile, configuration values, fragment of the expected error; None = must build
+#  [, extra linker switches [, testcase directory, default hello_world]])
 ROWS = [
     ("light", {}, None),
     # The clock tree's own checks (DS13313 Tables 12 and 39-40, RM0468 Table 16 and 8.7.11)
@@ -57,19 +58,25 @@ ROWS = [
     # The flash-size variants (L1): the 128 KB and 512 KB maps must link a small program
     ("light", {"MCU_Flash_Memory_Size": "B"}, None),
     ("light", {"MCU_Flash_Memory_Size": "E"}, None),
+    # L2: a program larger than the 128 KB map (192 KB of constants) fails at the link with a region overflow,
+    # and links against the default map
+    ("light", {"MCU_Flash_Memory_Size": "B"}, "`flash' overflowed", [], "big_program"),
+    ("light", {}, None, [], "big_program"),
 ]
 
 
 def row_id(row):
     profile, values, expected = row[:3]
     return (profile + ":" + (",".join(f"{k}={v}" for k, v in values.items()) or "default")
-            + (":" + ",".join(row[3]) if len(row) > 3 else "") + (":builds" if expected is None else ""))
+            + (":" + ",".join(row[3]) if len(row) > 3 and row[3] else "")
+            + (":" + row[4] if len(row) > 4 else "") + (":builds" if expected is None else ""))
 
 
 @pytest.mark.parametrize("row", ROWS, ids=row_id)
 def test_negative_build(row, tmp_path):
     profile, values, expected = row[:3]
     switches = row[3] if len(row) > 3 else []
+    testcase = TESTCASES / (row[4] if len(row) > 4 else "hello_world")
     crate_dir = INSTALL / f"{profile}-stm32h7xx"
     if not crate_dir.is_dir():
         pytest.skip(f"{profile} crate not generated")
@@ -77,7 +84,7 @@ def test_negative_build(row, tmp_path):
         pytest.skip("alr not on PATH")
     target_info = TargetInfo(crate_dir, values)
     working_dir = tmp_path / "crate"
-    harness = TestHarness(TESTCASE, working_dir, target_info)
+    harness = TestHarness(testcase, working_dir, target_info)
     harness.setup()
     if switches:
         gpr = working_dir / "test.gpr"

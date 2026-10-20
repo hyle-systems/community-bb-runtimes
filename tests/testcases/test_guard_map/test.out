@@ -1,0 +1,10 @@
+MPU_CTRL = 5
+DTCM: in region TRUE write/read TRUE
+AXI SRAM: in region TRUE write/read TRUE
+SRAM1/2: in region TRUE write/read TRUE
+SRAM4: in region TRUE write/read TRUE
+backup SRAM: write/read TRUE
+flash: in region TRUE read TRUE
+peripheral (TIM2_ARR): write/read TRUE
+from a task: write/read TRUE
+===TEST COMPLETE===
