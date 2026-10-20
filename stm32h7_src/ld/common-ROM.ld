@@ -134,6 +134,9 @@ SECTIONS
   /* The ECC regions the start-up zeroes with 64-bit stores (start-common.S,
      ecc_init): the whole AXI SRAM and the whole ITCM of the memory map. */
   __axisram_start = ORIGIN(axisram);
+  /* Where the start-up's ECC zeroing of the AXI SRAM begins: the start,
+     since the flash loader copies .axisram afterwards. */
+  __ecc_axisram_zero_start = ORIGIN(axisram);
   __axisram_end = ORIGIN(axisram) + LENGTH(axisram);
   __itcm_start = ORIGIN(itcm);
   __itcm_end = ORIGIN(itcm) + LENGTH(itcm);

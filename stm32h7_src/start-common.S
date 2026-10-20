@@ -147,6 +147,10 @@ ecc_init:
         movw    r0,#:lower16:__axisram_start
         movt    r0,#:upper16:__axisram_start
         adds    r1,r0,r5                /* end = start + the device's size */
+        movw    r0,#:lower16:__ecc_axisram_zero_start
+        movt    r0,#:upper16:__ecc_axisram_zero_start
+                                        /* flash loader: the start; RAM loader:
+                                           after the loaded image */
 0:      cmp     r0,r1
         bhs     1f
         strd    r2,r3,[r0],#8

@@ -1,0 +1,4 @@
+AXI SRAM monitor after sub-word writes: 0
+ITCM monitor after sub-word writes: 0
+shared AXI/ITCM monitor: 0
+===TEST COMPLETE===

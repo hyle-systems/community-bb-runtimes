@@ -1,0 +1,33 @@
+--  The same probe as test_ecc_initialised, linked for the RAM loader (opt.py):
+--  the image occupies the start of the AXI SRAM and the start-up must
+--  initialise the rest.
+--  After the family's start-up, every word of the AXI SRAM and of the ITCM
+--  carries a valid ECC (the start-up zeroes both with 64-bit stores before
+--  the data cache is on), so sub-word writes and read-backs anywhere in
+--  them raise no RAMECC flag. The probe uses the last kilobyte of each,
+--  which the runtime's memory map places nothing in. Without the start-up's
+--  zeroing the same program raises the flags on words nobody has written
+--  since power-up (measured 2026-10-17 on the AXI SRAM: 0x7).
+
+with Ada.Text_IO;
+with System;
+
+with ECC_Probe;
+
+procedure Test is
+   AXI_Last_KB  : constant System.Address := System'To_Address (16#2404_FC00#);
+   ITCM_Last_KB : constant System.Address := System'To_Address (16#0000_FC00#);
+begin
+   ECC_Probe.Clear (ECC_Probe.D1_AXI_SRAM);
+   ECC_Probe.Clear (ECC_Probe.D1_ITCM);
+   ECC_Probe.Clear (ECC_Probe.D1_Shared);
+
+   ECC_Probe.Touch (AXI_Last_KB, 1024);
+   ECC_Probe.Clean_Data_Cache (AXI_Last_KB, 1024);
+   ECC_Probe.Touch (ITCM_Last_KB, 1024);
+
+   ECC_Probe.Report ("AXI SRAM monitor after sub-word writes", ECC_Probe.D1_AXI_SRAM);
+   ECC_Probe.Report ("ITCM monitor after sub-word writes", ECC_Probe.D1_ITCM);
+   ECC_Probe.Report ("shared AXI/ITCM monitor", ECC_Probe.D1_Shared);
+   Ada.Text_IO.Put_Line ("===TEST COMPLETE===");
+end Test;

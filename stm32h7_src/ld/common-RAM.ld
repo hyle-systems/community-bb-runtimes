@@ -149,6 +149,11 @@ SECTIONS
 
     . = ALIGN(0x4);
     __ccmdata_end = .;
+    /* Where the start-up's ECC zeroing of the AXI SRAM begins: after the
+       loaded image (code, constants and this section), whose words the
+       loader has already written. */
+    . = ALIGN(8);
+    __ecc_axisram_zero_start = .;
   } > ccm_da
 
   .bss (NOLOAD): {
