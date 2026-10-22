@@ -43,10 +43,18 @@ def normalised(path: pathlib.Path) -> bytes:
     return path.read_bytes().replace(b"\r\n", b"\n")
 
 
+# The family's tasking units live in the two tasking crates only; every other family file is in all three.
+# A file missing from one profile's crate links the sibling family's copy or nothing - this is where it shows.
+TASKING_ONLY = {'s-bbbosu.adb', 'a-intnam.ads', 's-bbcppr.adb'}
+
+
 @pytest.mark.parametrize("src", list(family_sources()), ids=lambda p: str(p.relative_to(FAMILY)).replace("\\", "/"))
 def test_family_source_is_installed_unchanged(src: pathlib.Path):
     copies = [f for c in installed() for f in c.rglob(src.name) if f.is_file()]
     assert copies, f"{src.relative_to(FAMILY)} is in no generated crate"
+    expected = {"light-tasking", "embedded"} if src.name in TASKING_ONLY else {"light", "light-tasking", "embedded"}
+    present = {f.relative_to(INSTALL).parts[0].rsplit("-stm32h7xx", 1)[0] for f in copies}
+    assert expected <= present, f"{src.relative_to(FAMILY)} is missing from {sorted(expected - present)}"
     wrong = [f for f in copies if normalised(f) != normalised(src)]
     assert not wrong, (
         f"{src.relative_to(FAMILY)}: the installed copy differs from the family's in "

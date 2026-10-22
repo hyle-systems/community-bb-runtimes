@@ -40,6 +40,6 @@ package System.BB.MCU_Parameters is
    pragma Preelaborate;
 
    Number_Of_Interrupts : constant := 163;
-   --  Interrupt numbers 0 .. 162 (STM32H723.svd 1.7, RM0468 Table 145)
+   --  Interrupt numbers 0 .. 162 (STM32H723.svd 1.7, RM0468 Table 140)
 
 end System.BB.MCU_Parameters;

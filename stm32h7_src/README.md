@@ -6,7 +6,8 @@ repository's generator, in the shape of its other families. Developed and tested
 STM32H723ZG of the NUCLEO-H723ZG (silicon revision Z): 8 MHz from the on-board ST-LINK into the
 HSE input, PLL1 to 520 MHz at voltage scaling VOS0, the AXI/AHB clock at 260 MHz and the APB
 clocks at 130 MHz. Nothing in the family is specific to any product; the measurements quoted
-below name the testcase that reproduces them, with the toolchain they were taken with
+below name the testcase that reproduces them, or say that they were taken outside the test suite,
+with the toolchain they were taken with
 (gnat_arm_elf 16.1.0, OpenOCD 0.12.0).
 
 ## 1. Getting the crates
@@ -44,7 +45,7 @@ compile time, with a message naming the limit.
 
 | Option | Values (default) | What it does |
 |---|---|---|
-| `MCU_Sub_Family` | H723, H725, H730, H733, H735 (H723) | selects the device's register description |
+| `MCU_Sub_Family` | H723, H725, H730, H733, H735 (H723) | selects the device's register description (the STM32H723's: the H730/H733/H735 crypto peripherals' interrupts, CRYP 79, OTFDEC1 151, OTFDEC2 152, have slots but no names in `Ada.Interrupts.Names`) |
 | `MCU_Flash_Memory_Size` | B, E, G (G) | the flash map: 128 KB, 512 KB, 1 MB |
 | `HSE_Clock_Frequency` | 4 MHz .. 50 MHz (8 000 000) | the external clock or crystal |
 | `HSE_Bypass` | true/false (true) | true for a clock signal (the ST-LINK's MCO), false for a crystal |
@@ -100,7 +101,8 @@ until one. Read the schematic before changing it. `test_supply_config` reads the
 | SRAM4 | 0x3800_0000 | 16 KB | `.sram4`, no initial values |
 
 Place an object with `Linker_Section => ".axisram"` (or `.sram12`, `.sram4`); `Linker_Section`
-needs a library-level object. **A DMA cannot reach the DTCM**, so a DMA buffer goes in one of the
+needs a library-level object. **DMA1, DMA2 and BDMA cannot reach the DTCM** (the MDMA can, through the
+core's AHBS port, RM0468 2.4), so a DMA buffer goes in one of the
 three sections. SRAM1 and SRAM2 need their clocks (`RCC_AHB2ENR` SRAM1EN / SRAM2EN) before the
 first access; SRAM1, SRAM2 and SRAM4 must be written whole-word before any sub-word use - their ECC
 is not initialised by the start-up and their monitors flag the first read-modify-write after
@@ -117,7 +119,8 @@ runtime's own live in the DTCM. `test_memory_map` holds the placements.
 first sub-word write to a word nobody has written since power-up - by the start-up's own copy of
 `.axisram`, by a task, by a DMA - is a read-modify-write against an ECC that is garbage, and the
 RAMECC monitor flags it. The start-up (`start-common.S`, `ecc_init`) zeroes both with 64-bit stores
-before the data cache is enabled, about 200 µs at 520 MHz, for exactly the sizes the device's
+before the data cache is enabled and before the PLL, at the 64 MHz reset clock (its duration is not
+measured), for exactly the sizes the device's
 `TCM_AXI_SHARED` option gives (FLASH_OPTSR2_CUR: the ITCM is (field + 1) × 64 KB, the AXI SRAM the
 rest of 384 KB; 64/320 by default, then 128/256, 192/192, 256/128). The linker scripts describe the
 default sharing; a device set otherwise has less AXI SRAM than they declare. `test_ecc_initialised`
@@ -154,7 +157,10 @@ overflowed and never walks below it. `test_fault_in_handler` overflows the inter
 interrupt handler under the guard and checks that the report, a memory management fault, runs above
 that stack. Before the fault stack, the MemManage handler's own first push landed inside the window
 it had just hit, the fault escalated, and the hard-fault path ran below the interrupt stack, over the
-ECC words and `.bss`, while reporting.
+ECC words and `.bss`, while reporting. A fault inside the handling itself - the last-chance handler
+faulting, a second overflow - finds the report already running and parks on the fault stack instead
+of reporting again without end (`test_fault_in_fault`: the handler faults on purpose, nothing more
+is printed).
 
 **A last-chance handler on embedded runs in handler mode, on the fault stack**, after the
 unwinder: it must not use the secondary stack - no function returning `String`, no `'Image`, no
@@ -208,7 +214,8 @@ than the margin cannot even start under the check (`test_stack_check`, `test_sta
 re-raises walk the stack into the guard window or out of the memory. With the guard on as well,
 the check fires first (`test_stack_check_with_guard`); the complete picture is: the probe catches
 overflows in checked Ada code before the frame is used, the guard catches everything else at the
-boundary, the fault routing reports what remains. The probe costs about 250 ns on an
+boundary, the fault routing reports what remains. The probe costs about 250 ns (measured outside the
+test suite) on an
 interrupt-to-pin path at 520 MHz.
 
 **The interrupt stack** is 4 KB by default: size it for the deepest interrupt nesting (each level a
@@ -221,7 +228,8 @@ gnat_arm_elf 16.1.0 (a change in that number is worth a look). The embedded crat
 stack below 2048 bytes; `test_fault_stack_default` holds a window write with the default stacks.
 Light-tasking's handler is a direct call and needs less.
 
-**The FPU** is enabled at start-up with lazy stacking; `test_fpu_context` runs two
+**The FPU** is enabled at start-up (CP10 and CP11); lazy stacking is the core's reset default, which
+`test_startup_state` reads back; `test_fpu_context` runs two
 double-precision chains that switch every millisecond under a thousand interrupts that use the FPU
 and checks every result. `test_stack_alignment` holds the 8-byte alignment of the stack pointer in
 the main program, at a task's start and inside a handler; `test_startup_state` the start-up's end
@@ -235,12 +243,14 @@ the board's 32.768 kHz crystal, the one clock that does not descend from the PLL
 from the LSE and counted over one second of `Ada.Real_Time` agrees within 2 % at the default point,
 at 400 MHz (VOS1), at 170 MHz (VOS3) and on the HSI at 64 MHz (`test_clock_reference`,
 `test_clock_point_400`, `test_clock_point_170`, `test_clock_hsi64`); the ST-LINK's 8 MHz is about
-one percent high on this board, which the PLL inherits. The timer kernel clocks are twice the APB
+one percent high on this board (measured outside the test suite against the LSE; the clock tests
+themselves only ask for 2 %), which the PLL inherits. The timer kernel clocks are twice the APB
 clocks the runtime computes (TIMPRE = 0, RM0468 8.7.6): TIM2 and TIM1 free-running against the
 runtime's second give the ratio 1.000 (`test_timer_clock`). On the NUCLEO-H723ZG, keep the user
 button (PC13) alone while the LSE is a reference (ES0491 2.2.6).
 
-Measured on the NUCLEO-H723ZG at 520 MHz with a 1 MHz logic analyser (+44 ppm against the host):
+Measured outside the test suite, with purpose-built programs on the NUCLEO-H723ZG at 520 MHz and a
+1 MHz logic analyser (+44 ppm against the host):
 an interrupt's latency from the hardware edge to the handler's edge p99 0.500 µs, maximum 0.625 µs
 over 106 033 events, none lost; two periodic tasks of 100 and 500 ms over ten minutes within ±5 µs
 of their periods (the instrument's resolution) once normalised to the board's clock; `delay until`

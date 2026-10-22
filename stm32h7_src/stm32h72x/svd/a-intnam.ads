@@ -102,7 +102,7 @@ package Ada.Interrupts.Names is
    TIM1_TRG_COM_Interrupt            : constant Interrupt_ID := 26;
 
    --  TIM1 capture / compare. STM32H723.svd 1.7 names this interrupt
-   --  "TIM_CC"; RM0468 Table 145 (vector 27) and every other STM32 SVD
+   --  "TIM_CC"; RM0468 Table 140 (vector 27) and every other STM32 SVD
    --  name it TIM1_CC, which is what the runtime exposes.
    TIM1_CC_Interrupt                 : constant Interrupt_ID := 27;
 

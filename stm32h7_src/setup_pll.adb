@@ -121,7 +121,7 @@ procedure Setup_Pll is
         when Config.VOS2 => 150_000_000,
         when Config.VOS3 =>  85_000_000);
 
-   --  PLL1 input range code for RCC_PLLCFGR.PLL1RGE (RM0468 8.7.10):
+   --  PLL1 input range code for RCC_PLLCFGR.PLL1RGE (RM0468 8.7.11):
    --  00 = 1..2 MHz, 01 = 2..4 MHz, 10 = 4..8 MHz, 11 = 8..16 MHz
 
    PLL_RGE : constant :=
@@ -134,9 +134,11 @@ procedure Setup_Pll is
    --  1 to 2 MHz runs the medium range, 150 .. 420 MHz with every output
    --  limited to 210 MHz (Table 40); an input of 2 to 16 MHz runs the wide
    --  range, 192 .. 836 MHz (Table 39). Exactly 2 MHz is in both tables;
-   --  the wide range is taken.
+   --  the medium range is taken, as the PLL1RGE code above says 1 .. 2 MHz
+   --  for it (RM0468 8.5.5: a reference lower than or equal to 2 MHz
+   --  selects VCOL).
 
-   PLL_VCO_Medium : constant Boolean := PLL_IN_Freq < 2_000_000;
+   PLL_VCO_Medium : constant Boolean := PLL_IN_Freq <= 2_000_000;
 
    PLL_Medium_Out_Max : constant :=
      (if Config.Voltage_Scaling = Config.VOS3 then 200_000_000
@@ -182,12 +184,22 @@ procedure Setup_Pll is
       pragma Compile_Time_Error
         (Config.PLL_P_Div /= 1 and Config.PLL_P_Div mod 2 /= 0,
          "Invalid PLL configuration. PLL1 P divider must be 1 or even"
-           & " (RM0468 8.7.11)");
+           & " (RM0468 8.7.12)");
 
       pragma Compile_Time_Error
         (CPU_Clock_Freq > CPU_Max,
          "CPU clock above the maximum for the selected voltage scaling"
            & " (520 / 400 / 300 / 170 MHz for VOS0 / 1 / 2 / 3)");
+
+      --  The P output has a ceiling of its own, DS13313 Table 39: 550 / 400 /
+      --  300 / 170 MHz per voltage scaling (520 at VOS0 here, the CPU's own
+      --  maximum, since the boost point is not supported). D1CPRE divides
+      --  the CPU clock after it and does not lift it.
+      pragma Compile_Time_Error
+        (Activate_PLL and PLL_P_Freq > CPU_Max,
+         "PLL1 P output above the maximum for the selected voltage scaling"
+           & " (520 / 400 / 300 / 170 MHz for VOS0 / 1 / 2 / 3, DS13313"
+           & " Table 39; D1CPRE does not lift it)");
 
       pragma Compile_Time_Error
         (HCLK_Freq > HCLK_Max,
@@ -268,7 +280,7 @@ procedure Setup_Pll is
          end loop;
       end if;
 
-      --  PLL1 (RM0468 8.4.7, registers 8.7.9 .. 8.7.12)
+      --  PLL1 (RM0468 8.5.5, registers 8.7.10 .. 8.7.13)
 
       if Activate_PLL then
          RCC_Periph.CR.PLL1ON := 0;
@@ -318,7 +330,7 @@ procedure Setup_Pll is
          end loop;
       end if;
 
-      --  Domain prescalers (RM0468 8.7.5 .. 8.7.7): D1CPRE and HPRE take
+      --  Domain prescalers (RM0468 8.7.7 .. 8.7.9): D1CPRE and HPRE take
       --  0xxx = /1, 1000 = /2, 1001 = /4, 1010 = /8, 1011 = /16, 1100 = /64,
       --  1101 = /128, 1110 = /256, 1111 = /512; the APB prescalers take
       --  0xx = /1, 100 = /2, 101 = /4, 110 = /8, 111 = /16.
@@ -380,7 +392,7 @@ procedure Setup_Pll is
                                      when Config.DIV8  => 2#110#,
                                      when Config.DIV16 => 2#111#);
 
-      --  Switch the system clock (RM0468 8.7.4: SW and SWS take
+      --  Switch the system clock (RM0468 8.7.6: SW and SWS take
       --  000 = HSI, 001 = CSI, 010 = HSE, 011 = PLL1 P)
 
       SW_Value := (case Config.SYSCLK_Src is

@@ -141,6 +141,7 @@ package body System.BB.CPU_Primitives is
 
    MPU_TYPE : Word with Volatile, Address => 16#E000_ED90#;
    MPU_CTRL : Word with Volatile, Address => 16#E000_ED94#;
+   MPU_RNR  : Word with Volatile, Address => 16#E000_ED98#;
    MPU_RBAR : Word with Volatile, Address => 16#E000_ED9C#;
    MPU_RASR : Word with Volatile, Address => 16#E000_EDA0#;
 
@@ -484,6 +485,11 @@ package body System.BB.CPU_Primitives is
         (Word (System.Storage_Elements.To_Integer (Stack_Bottom))
          + (Guard_Bytes - 1)) and not Word'(Guard_Bytes - 1);
    begin
+      --  A region previously enabled is disabled before its settings change
+      --  (PM0253 4.6.8); region 0 moves at every context switch, 1 and 2 are
+      --  programmed here again after the start-up's guard_init.
+      MPU_RNR  := Region;
+      MPU_RASR := 0;
       MPU_RBAR := Base or 16#10# or Region;  --  VALID: selects the region
       MPU_RASR := Guard_RASR;
       Asm ("dsb" & NL & "isb", Volatile => True);

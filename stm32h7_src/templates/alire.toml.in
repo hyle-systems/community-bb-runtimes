@@ -72,7 +72,8 @@ anything (1792 bytes measured with gnat_arm_elf 16.1.0, the testcase `test_fault
 embedded crate refuses a fault stack below 2048 bytes at compile time. An overflow of the interrupt
 stack into its guard window is reported as a memory management fault like any other (before the
 fault stack, the handler's own first push into the window escalated it to a hard fault reported from
-below the stack). Size the interrupt stack for the deepest nesting and the guard window.
+below the stack). A fault inside the handling itself parks the report instead of repeating it. Size
+the interrupt stack for the deepest nesting and the guard window.
 
 `Supply_Configuration` is the board's core-supply arrangement, RM0468 Table 30: `LDO` (row 1, the
 default: the NUCLEO-H723ZG and every part without the SMPS step-down converter), `SMPS` (row 2, the

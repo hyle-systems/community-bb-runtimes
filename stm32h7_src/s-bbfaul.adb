@@ -28,12 +28,27 @@
 
 package body System.BB.Faults is
 
+   Reporting : Boolean := False with Volatile;
+   --  Set by the first report. A fault inside the handling itself - the
+   --  last-chance handler faulting, a second overflow - finds it set and
+   --  parks below instead of reporting again without end. Zeroed with .bss
+   --  at start-up, so the first fault after a reset reports; never reset
+   --  afterwards, since a fault raised here does not come back to the
+   --  program (the handler does not return).
+
    ------------
    -- Report --
    ------------
 
    procedure Report (Vector : Interfaces.Unsigned_32) is
    begin
+      if Reporting then
+         loop
+            exit when not Reporting;   --  never: parked, on the fault stack
+         end loop;
+      end if;
+      Reporting := True;
+
       case Vector is
          when 2 =>
             raise Program_Error with "non-maskable interrupt";

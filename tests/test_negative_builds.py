@@ -4,7 +4,7 @@ builds the hello_world testcase (or the one the row names) against the generated
 runtime's compile-time checks (setup_pll.adb, s-bbcppr.adb) are what refuse it.
 
 Run with ``pytest test_negative_builds.py`` from ``tests/`` after ``../generate-runtimes.sh --target stm32h7xx``.
-Not to be run while the on-target runner is building against the same crates. About 15 s per row.
+Not to be run while the on-target runner is building against the same crates. About 25 s per row with configuration values (a private runtime copy), a few seconds without.
 """
 import pathlib
 import shutil
@@ -35,6 +35,14 @@ ROWS = [
     ("light", {"PLL_M_Div": 8, "PLL_N_Mul": 400}, "medium range"),   # 1 MHz in selects the medium range: VCO 400 MHz is in it, but P out 400 MHz is above its 210 MHz
     ("light", {"PLL_N_Mul": 20}, "wide range"),                      # 8 MHz in selects the wide range: VCO 160 MHz is below its 192 MHz
     ("light", {"PLL_M_Div": 8, "PLL_N_Mul": 100}, "medium range"),    # 1 MHz in selects the medium range: VCO 100 MHz is below its 150 MHz
+    # The PLL1 P output has its own ceiling (DS13313 Table 39: 550/400/300/170 MHz per VOS, 520 at VOS0 as the CPU's),
+    # which D1CPRE does not lift: VOS3, N = 85, P = 2, D1CPRE = 2 gives a 170 MHz CPU from a 340 MHz P output
+    ("light", {"Voltage_Scaling": "VOS3", "PLL_N_Mul": 85, "PLL_P_Div": 2, "D1CPRE": "DIV2", "HPRE": "DIV2"}, "PLL1 P output above"),
+    ("light", {"Voltage_Scaling": "VOS3", "PLL_N_Mul": 85, "PLL_P_Div": 4, "HPRE": "DIV2"}, None),   # P out 170: builds
+    # At exactly 2 MHz of PLL1 input the loop filter's code says 1-2 MHz: the VCO must be the medium one too
+    # (RM0468 8.5.5), whose outputs are limited to 210 MHz: M = 4 from 8 MHz, N = 200 -> 400 MHz is refused there
+    ("light", {"PLL_M_Div": 4, "PLL_N_Mul": 200}, "medium range"),
+    ("light", {"PLL_M_Div": 4, "PLL_N_Mul": 100}, None),   # 200 MHz: builds in the medium range
     # The guard-size option
     ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 100}, "Stack_Guard_Bytes must be"),
     ("light", {"Stack_Guard": True, "Stack_Guard_Bytes": 100}, "Stack_Guard_Bytes"),  # the option is meaningless in light and must not be accepted silently

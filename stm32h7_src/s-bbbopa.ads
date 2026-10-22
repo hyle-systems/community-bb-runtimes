@@ -53,7 +53,7 @@ package System.BB.Board_Parameters is
    --------------------
 
    HSI_Base_Freq : constant := 64_000_000;
-   --  hsi_ck is 64 MHz, optionally divided by HSIDIV (RM0468 8.4.2)
+   --  hsi_ck is 64 MHz, optionally divided by HSIDIV (RM0468 8.7.2)
 
    CSI_Freq : constant := 4_000_000;
    LSE_Freq : constant := 32_768;
@@ -71,7 +71,7 @@ package System.BB.Board_Parameters is
    -- PLL1 --
    ----------
 
-   --  PLL1 limits, RM0468 8.4.7: the input (after the M divider) 1 .. 16 MHz;
+   --  PLL1 limits, RM0468 8.5.5: the input (after the M divider) 1 .. 16 MHz;
    --  the VCO 192 .. 836 MHz in the wide range (PLL1VCOSEL = 0) or
    --  150 .. 420 MHz in the medium range (= 1).
 

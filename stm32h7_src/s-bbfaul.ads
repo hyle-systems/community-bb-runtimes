@@ -45,7 +45,9 @@ package System.BB.Faults is
      with Export, Convention => C, External_Name => "__gnat_fault_report",
           No_Return;
    --  Vector is IPSR's exception number: 2 NMI, 3 HardFault, 4 MemManage,
-   --  5 BusFault, 6 UsageFault. Runs on the main stack in Handler mode, so
-   --  it is reachable even when a task's stack has been destroyed.
+   --  5 BusFault, 6 UsageFault. Runs in Handler mode on the fault stack the
+   --  trap switched to, so it is reachable even when the stack that faulted
+   --  has been destroyed. A second entry - a fault inside the handling
+   --  itself - parks instead of reporting again.
 
 end System.BB.Faults;
