@@ -1,79 +1,308 @@
-# STM32H7xx Runtimes
+# STM32H7xx runtimes
 
-Work in progress: GNAT runtimes (light, light-tasking, embedded) for the STM32H723 / H725 / H730 / H733 /
-H735 line (reference manual RM0468), generated from the compiler's bb-runtimes sources with this
-repository's generator. First target: the STM32H723ZG on the NUCLEO-H723ZG (8 MHz external clock from
-the on-board ST-LINK, PLL1 to 520 MHz).
+GNAT runtimes - light, light-tasking and embedded - for the STM32H723, H725, H730, H733 and H735
+line (reference manual RM0468), generated from the compiler's bb-runtimes sources by this
+repository's generator, in the shape of its other families. Developed and tested on the
+STM32H723ZG of the NUCLEO-H723ZG (silicon revision Z): 8 MHz from the on-board ST-LINK into the
+HSE input, PLL1 to 520 MHz at voltage scaling VOS0, the AXI/AHB clock at 260 MHz and the APB
+clocks at 130 MHz. Nothing in the family is specific to any product; the measurements quoted
+below name the testcase that reproduces them, with the toolchain they were taken with
+(gnat_arm_elf 16.1.0, OpenOCD 0.12.0).
 
-The usage and configuration documentation follows the stm32g4xx family's once the crates are generated.
+## 1. Getting the crates
 
-## Faults are reported, not looped
+```sh
+./generate-runtimes.sh --target stm32h7xx
+```
+writes three crates, `install/light-stm32h7xx`, `install/light-tasking-stm32h7xx` and
+`install/embedded-stm32h7xx` (sources; the library is compiled by the first build that uses it).
+Pin the one you want by path and depend on it:
 
-SVD2Ada's vector table sends NMI, HardFault, MemManage, BusFault and UsageFault to `fault: b fault`, an
-endless loop: a faulted board is silent until reset. This family routes those five vectors to
-`__gnat_fault_trap` (`stm32h72x/svd/handler.S`), a `Fault_Handler` in the family's copy of the generic
-Armv7-M CPU primitives (`s-bbcppr.adb`, registered through `CortexMArch_H7` in `build-rts.py`) that reads
-IPSR and raises the fault through `GNAT_Error_Handler`, so it ends in the last-chance handler with a report
-(`bus fault`, `hard fault`, `usage fault`, `memory management fault`, `non-maskable interrupt`) and then in
-`Machine_Reset.Stop`. The handler.S keeps a weak `__gnat_fault_trap` stub, so a profile without the Ada
-handler links and behaves as before. The upstream unit is otherwise unchanged; the change is a candidate
-for bb-runtimes itself. Measured on the NUCLEO-H723ZG, 2026-10-17: ten induced stack overflows, ten identical
-reports, ten self-resets.
+```toml
+[[depends-on]]
+light_tasking_stm32h7xx = "*"
 
-## Stack guard (MPU), an option
+[[pins]]
+light_tasking_stm32h7xx = { path = "../community-bb-runtimes/install/light-tasking-stm32h7xx" }
+```
+and in the project file `with "runtime_build.gpr";` (plus `with "ravenscar_build.gpr";` in the
+tasking profiles), `for Target use Runtime_Build'Target;`, `for Runtime ("Ada") use
+Runtime_Build'Runtime ("Ada");`, and `Runtime_Build.Linker_Switches` in the linker's switches:
+they carry the memory map and two link-time symbols the start-up reads. The crate's own
+`long-description` repeats this with the option list.
 
-`Stack_Guard = true` in the crate configuration keeps a 32-byte no-access MPU region at the lowest
-32-byte-aligned address of every stack: region 0 for the running thread, re-programmed before each
-context switch from the next thread's stack bottom; region 1 for the interrupt stack; region 2 for the
-environment task's stack. The first write past a stack's bottom is then a precise MemManage fault,
-reported as `memory management fault` through the fault routing above, instead of a silent walk into
-the memory below. The default memory map stays in force elsewhere (PRIVDEFENA), the MPU is off in
-HardFault and NMI handlers, each stack loses 32 to 63 bytes at its bottom, and applications that use the
-MPU themselves should start at region 3. Off by default. Measured on the NUCLEO-H723ZG, 2026-10-17: see
-the commit message.
+Which profile: **light** has no tasking and no exception propagation (a raise goes straight to
+the last-chance handler); **light-tasking** adds Ravenscar tasking, still without propagation;
+**embedded** adds exception propagation and the full library. The three share one start-up,
+one vector table and one memory map.
 
-## Compiler stack checking (`-fstack-check`) in light-tasking
+## 2. Configuration
 
-The light-tasking profile carries the embedded profile's `System.BB.Threads.Stack_Checking`
-(`s-btstch`, copied in by `patch-runtime.py`), the `__gnat_stack_check` that `-fstack-check` calls at
-every subprogram entry; it raises `Storage_Error`, which under `No_Exception_Propagation` goes straight
-to the last-chance handler. Linked only when an application compiles with `-fstack-check`. **Size the
-stacks for it:** the compiler's generic probe asks for about 4 400 bytes free below each new frame
-(`sp - 4392` on this target), so every stack it can run on must hold its peak use plus that margin:
-the environment task's (`-Wl,--defsym=__stack_size=16384` for example), each task's `Storage_Size`,
-and the interrupt stack (`Interrupt_Stack_Size`, 8192 for example), because a checked prologue in a
-protected handler probes against the interrupt stack. With 4 KB stacks every first probe fails.
-Measured on the NUCLEO-H723ZG, 2026-10-17: ten induced overflows, ten `Storage_Error` reports from
-`s-btstch.adb`, no fault; the probe costs about 250 ns on an interrupt-to-pin path. The complete
-picture with the stack guard above: the probe catches overflows in checked Ada code before the frame is
-used, the MPU guard catches everything else at the boundary, and the fault routing reports what remains.
+Every option is an Alire crate configuration value (`light_tasking_stm32h7xx.Option = value` under
+`[configuration.values]`). The crate refuses a configuration that breaks a limit of the chip at
+compile time, with a message naming the limit.
 
-## ECC RAM initialisation and the TCM size check at start-up
+| Option | Values (default) | What it does |
+|---|---|---|
+| `MCU_Sub_Family` | H723, H725, H730, H733, H735 (H723) | selects the device's register description |
+| `MCU_Flash_Memory_Size` | B, E, G (G) | the flash map: 128 KB, 512 KB, 1 MB |
+| `HSE_Clock_Frequency` | 4 MHz .. 50 MHz (8 000 000) | the external clock or crystal |
+| `HSE_Bypass` | true/false (true) | true for a clock signal (the ST-LINK's MCO), false for a crystal |
+| `HSI_Div` | DIV1 .. DIV8 (DIV1) | the 64 MHz internal oscillator's divider |
+| `PLL_Src` | HSE, HSI (HSE) | PLL1's input |
+| `PLL_M_Div`, `PLL_N_Mul`, `PLL_P_Div` | 1..63 (1), 4..512 (65), 1..128 (1) | PLL1: input divider, multiplier, system-clock divider |
+| `PLL_Q_Div`, `PLL_R_Div`, `PLL_Q_Enable`, `PLL_R_Enable` | 1..128 (4, 2), false | the other two PLL1 outputs |
+| `SYSCLK_Src` | HSI, CSI, HSE, PLL1 (PLL1) | the system clock's source |
+| `Voltage_Scaling` | VOS0 .. VOS3 (VOS0) | the core's voltage scaling, which sets the clock maxima |
+| `D1CPRE`, `HPRE`, `D1PPRE`, `D2PPRE1`, `D2PPRE2`, `D3PPRE` | DIV1 .. (DIV1, DIV2, DIV2, DIV2, DIV2, DIV2) | the core, AXI/AHB and APB prescalers |
+| `Supply_Configuration` | nine arrangements (LDO) | the board's core supply, RM0468 Table 30; see below |
+| `Interrupt_Stack_Size` | bytes (4096) | the interrupt stack, shared by every interrupt priority |
+| `Stack_Guard` | true/false (false) | an MPU no-access window under every stack; see section 5 |
+| `Stack_Guard_Bytes` | 32, 64, 128, 256, 512, 1024 (32) | the window's size |
 
-The AXI SRAM and the ITCM carry 8 ECC bits per 64-bit word (RM0468 2.4). The first sub-word write to a
-word nobody has written since power-up, by the start-up's own 32-bit copy of `.axisram`, by a task or by
-a DMA, is a read-modify-write against an ECC that is garbage, and the RAMECC monitor flags it (measured:
-D1 monitor 1 read 0x7 after one program that used the AXI SRAM). The family's `start-common.S` zeroes
-both regions with 64-bit stores before the data cache is enabled, so every word carries a valid ECC
-before anything touches it (about 200 µs at 520 MHz). The bounds are the linker's `__axisram_*` and
-`__itcm_*`, the memory map's 320 KB and 64 KB of the default TCM_AXI_SHARED option bytes.
-`Initialize_Board` then checks the core's ITCMCR / DTCMCR sizes against that map (DTCM 128 KB, ITCM at
-least 64 KB) and raises `Program_Error` into the last-chance handler if they differ. The RAMECC monitors
-themselves are left to the application: read them once after start-up, clear them, then arm the ECC
-interrupt if wanted.
+What the crate refuses, and where the check lives:
 
-Regions 1 and 2 are programmed by the start-up (`start-common.S`, `guard_init`) for every program,
-tasking or not, from the crate's `__stack_guard_bytes`; region 0 follows the running task once the
-tasking runtime is up. A program with no tasking unit has only the environment stack, and it is
-guarded; `test_guard_taskless` and `test_guard_taskless_hit` hold this.
+- A PLL1 input outside 1 .. 16 MHz after the M divider; a VCO outside its range - 192 .. 836 MHz
+  when the input is 2 .. 16 MHz (the wide range), 150 .. 420 MHz when it is 1 .. 2 MHz (the medium
+  range, whose outputs are also limited); an odd P divider other than 1; a CPU, AXI/AHB or APB clock
+  above the maximum of the selected voltage scaling (520 / 275 / 137.5 MHz at VOS0). The flash wait
+  states follow RM0468 Table 16. (`setup_pll.adb`; DS13313 Tables 12, 39 and 40.)
+- `Interrupt_Stack_Size`, `Stack_Guard` and `Stack_Guard_Bytes` set away from their defaults in the
+  light crate, which has no interrupt stack, no context switch and no MPU code
+  (`System.BB.Parameters`).
+- A `Stack_Guard_Bytes` that is not one of the six sizes; an interrupt stack smaller than four
+  windows; at link time, an environment stack smaller than four windows ("environment stack smaller
+  than four guard windows", an assertion of the linker script against `__stack_size`)
+  (`System.BB.CPU_Primitives`, the linker scripts).
+- On embedded, an `Interrupt_Stack_Size` below 2048 bytes plus the window (`System.BB.Parameters`;
+  section 5 says why).
 
-The stack guard's window is configurable, `Stack_Guard_Bytes` = 32 (default), 64, 128, 256, 512 or
-1024: size it to the largest frame of code that is not compiled with `-fstack-check`.
+`tests/test_negative_builds.py` holds every refusal and the configurations that must build.
 
-The interrupt stack is 4 KB by default (`Interrupt_Stack_Size`). On embedded a fault's handling - the
-raise, the unwinder and the last-chance handler - runs in handler mode on it and needs about 1.8 KB
-before the application's handler does anything (1792 bytes measured, `test_fault_stack_use`); with the
-old 1 KB default and a window at the stack's bottom the path overflowed into the window and the fault
-escalated to a hard fault, and with the guard off it walked silently below the stack. The embedded
-crate refuses less than 2048 bytes plus the window; `test_fault_stack_default` holds the window write
-with the default stack.
+**The supply configuration** is the board's, RM0468 Table 30: `LDO` (the NUCLEO-H723ZG and every
+part without the SMPS step-down converter), `SMPS`, `SMPS_1V8_Supplies_LDO`,
+`SMPS_2V5_Supplies_LDO`, `SMPS_1V8_Supplies_External_And_LDO`, `SMPS_2V5_Supplies_External_And_LDO`,
+`SMPS_1V8_Supplies_External_LDO_Bypass`, `SMPS_2V5_Supplies_External_LDO_Bypass`, `Bypass`. The
+start-up writes it into PWR_CR3 before anything touches RAM and waits for the voltage levels to be
+valid (ACTVOSRDY). The register is write-once until a power-on reset: a changed value takes effect
+after a power cycle, and an arrangement the board is not wired for leaves the core unsupplied
+until one. Read the schematic before changing it. `test_supply_config` reads the bits back.
+
+## 3. Memory map and placement
+
+| Region | Address | Size | Use |
+|---|---|---|---|
+| flash | 0x0800_0000 | 128 KB / 512 KB / 1 MB by `MCU_Flash_Memory_Size` | code, constants, initial values |
+| ITCM | 0x0000_0000 | 64 KB (default sharing) | no output section yet: code is not placed there by these scripts |
+| DTCM | 0x2000_0000 | 128 KB | **the runtime's home**: data, zeroed data, every stack, the heap |
+| AXI SRAM | 0x2400_0000 | 320 KB (default sharing) | `.axisram`, with initial values, copied by the start-up |
+| SRAM1 + SRAM2 | 0x3000_0000 | 32 KB | `.sram12`, no initial values |
+| SRAM4 | 0x3800_0000 | 16 KB | `.sram4`, no initial values |
+
+Place an object with `Linker_Section => ".axisram"` (or `.sram12`, `.sram4`); `Linker_Section`
+needs a library-level object. **A DMA cannot reach the DTCM**, so a DMA buffer goes in one of the
+three sections. SRAM1 and SRAM2 need their clocks (`RCC_AHB2ENR` SRAM1EN / SRAM2EN) before the
+first access; SRAM1, SRAM2 and SRAM4 must be written whole-word before any sub-word use - their ECC
+is not initialised by the start-up and their monitors flag the first read-modify-write after
+power-up (`test_ecc_survey`, after a power cycle: three flags each; the DTCM none; the backup SRAM
+none). All three placements are cacheable in the default memory map: clean the cache before a DMA
+reads a buffer, invalidate it after a DMA writes one, with a barrier between a cache maintenance
+operation and the store that follows (errata ES0491 2.1.4), or give the buffer an MPU region of its
+own from region 3 up. `test_dma_cache` holds the rule: a DMA1 memory-to-memory transfer between two
+`.axisram` buffers reads stale data without the maintenance and none with it (0 errors in 10 000
+transfers). Text buffers for semihosting output are read by the host behind the cache too; the
+runtime's own live in the DTCM. `test_memory_map` holds the placements.
+
+**ECC at start-up.** The AXI SRAM and the ITCM carry 8 ECC bits per 64-bit word (RM0468 2.4): the
+first sub-word write to a word nobody has written since power-up - by the start-up's own copy of
+`.axisram`, by a task, by a DMA - is a read-modify-write against an ECC that is garbage, and the
+RAMECC monitor flags it. The start-up (`start-common.S`, `ecc_init`) zeroes both with 64-bit stores
+before the data cache is enabled, about 200 µs at 520 MHz, for exactly the sizes the device's
+`TCM_AXI_SHARED` option gives (FLASH_OPTSR2_CUR: the ITCM is (field + 1) × 64 KB, the AXI SRAM the
+rest of 384 KB; 64/320 by default, then 128/256, 192/192, 256/128). The linker scripts describe the
+default sharing; a device set otherwise has less AXI SRAM than they declare. `test_ecc_initialised`
+reads the monitors after start-up (zero on every profile); `test_tcm_sharing` reads the option and
+the sizes the start-up computed. The monitors themselves are the application's: read them once
+after start-up, clear them, arm the ECC interrupt if wanted.
+
+**Loading into RAM.** Build with `-XLOADER=RAM` and the image links into the AXI SRAM (`.data` in the
+DTCM), with the vector table at its start; the ECC zeroing then begins after the loaded image. The
+test harness loads such an image with `load_image` and starts it from its vector table
+(`test_ram_loader`, `test_ecc_initialised_ram`).
+
+## 4. Faults
+
+The vector table (`stm32h72x/svd/handler.S`) sends NMI, HardFault, MemManage, BusFault and
+UsageFault to `__gnat_fault_trap`, which reads IPSR and calls `System.BB.Faults.Report`
+(`s-bbfaul`): `Program_Error` with "non-maskable interrupt", "hard fault" or "bus fault",
+`Storage_Error` with "memory management fault", `Constraint_Error` with "usage fault". The start-up
+sets VTOR to this table and enables the three configurable faults in SHCSR for every profile, so a
+program without tasking faults the same way as one with. In light and light-tasking the raise goes
+straight to the last-chance handler, `procedure Last_Chance_Handler (Msg : System.Address; Line :
+Integer)` with the message in `Msg`; in embedded it propagates and reaches `procedure
+Last_Chance_Handler (Except : Ada.Exceptions.Exception_Occurrence)`. The default handler resets
+the board (SYSRESETREQ); a debugger attached across repeated self-resets can lose the probe, so a
+test program's handler parks in a loop instead. `test_fault_bus`, `test_fault_usage` and
+`test_fault_escalated` hold the three paths on every profile. A fault whose handler cannot run
+(the fault at a priority the handler cannot pre-empt, or a second fault in the handler) escalates
+to a hard fault and is reported as one.
+
+**A last-chance handler on embedded runs in handler mode, on the interrupt stack**, after the
+unwinder: it must not use the secondary stack - no function returning `String`, no `'Image`, no
+`&` on unconstrained strings; fixed buffers and `Put` only (`test_fault_stack_use`'s handler is an
+example) - and the interrupt stack must hold the whole path (section 5).
+
+## 5. Stacks: the guard, the compiler's check, the sizes
+
+**The MPU stack guard** (`Stack_Guard = true`) keeps a no-access, execute-never window of
+`Stack_Guard_Bytes` at the bottom of every stack: region 0 for the running task, re-programmed
+before each context switch from the next task's stack bottom; region 1 for the interrupt stack;
+region 2 for the environment stack. The first write past a stack's bottom is then a precise
+MemManage fault, reported as "memory management fault", instead of a silent walk into the memory
+below. Regions 1 and 2 are programmed by the start-up (`start-common.S`, `guard_init`) for every
+program, tasking or not, from the link-time symbol `__stack_guard_bytes` the crate passes; region
+0 follows the running task once the tasking runtime is up (a program with no tasking unit has only
+the environment stack, and it is guarded: `test_guard_taskless`, `test_guard_taskless_hit`). The
+default memory map stays in force everywhere else (PRIVDEFENA); the MPU is off inside HardFault and
+NMI handlers (HFNMIENA clear); applications that use the MPU themselves start at region 3.
+`test_guard_regions` reads the three regions back; `test_guard_map` writes and reads every memory
+of the map and a peripheral under the guard; `test_guard_off` holds the default.
+
+The window sits inside the stack at its bottom: the interrupt and environment stacks, which the
+linker aligns to the window, lose exactly one window; a task's stack, aligned by the compiler to
+8, loses between one and two. Three sizing rules:
+
+1. **Every guarded stack is at least four windows.** The crate checks the interrupt stack at
+   compile time and the environment stack at link time; a task's `Storage_Size` is the
+   application's, which can state the rule next to the task:
+   ```ada
+   pragma Compile_Time_Error
+     (Light_Tasking_Stm32h7xx_Config.Stack_Guard
+        and then My_Task_Stack_Size < 4 * Light_Tasking_Stm32h7xx_Config.Stack_Guard_Bytes,
+      "My_Task's stack is smaller than four guard windows");
+   ```
+2. **The window is at least the largest frame of code that is not compiled with `-fstack-check`.**
+   A frame whose first write lands more than the window below the previous stack pointer steps
+   over it.
+3. **A stack that code compiled with `-fstack-check` runs on holds its peak use plus the probe's
+   margin**, about 4.4 KB on this target (`sp - 4392` in the prologues); see below.
+
+**The compiler's stack check** (`-fstack-check`) calls `__gnat_stack_check` at every subprogram
+entry; the light-tasking crate carries the embedded profile's `System.BB.Threads.Stack_Checking`
+(`s-btstch`, copied in by `patch-runtime.py`) so the call resolves there too, and it raises
+`Storage_Error` from `s-btstch.adb` into the last-chance handler. Linked only when an application
+compiles with the switch. The check compares the probe address with the running task's stack
+bottom, so it fires when the frame plus the margin would not fit: a task whose stack is smaller
+than the margin cannot even start under the check (`test_stack_check`, `test_stack_check_margin`).
+**Keep the last-chance handler itself out of the checked units**: a handler compiled with
+`-fstack-check` re-raises from its own prologue when it is entered below the limit, and the
+re-raises walk the stack into the guard window or out of the memory. With the guard on as well,
+the check fires first (`test_stack_check_with_guard`); the complete picture is: the probe catches
+overflows in checked Ada code before the frame is used, the guard catches everything else at the
+boundary, the fault routing reports what remains. The probe costs about 250 ns on an
+interrupt-to-pin path at 520 MHz.
+
+**The interrupt stack** is 4 KB by default. On embedded a fault's handling - the raise in
+`System.BB.Faults.Report`, the unwinder and the last-chance handler - runs in handler mode on it
+and needs about 1.8 KB before the application's handler does anything: `test_fault_stack_use`
+fills the stack with a pattern, takes a bus fault and finds the lowest word the path touched -
+1792 bytes, rounded up to 256, with gnat_arm_elf 16.1.0 (a change in that number is worth a look).
+Size the interrupt stack for that path, the deepest interrupt nesting (each level a frame plus the
+FPU's lazy-stacking space) and the guard window; the embedded crate refuses less than 2048 bytes
+plus the window, and `test_fault_stack_default` holds a window write with the default stack.
+Light-tasking's handler is a direct call and fits in the default; `test_interrupt_stack_size`
+holds the option.
+
+**The FPU** is enabled at start-up with lazy stacking; `test_fpu_context` runs two
+double-precision chains that switch every millisecond under a thousand interrupts that use the FPU
+and checks every result. `test_stack_alignment` holds the 8-byte alignment of the stack pointer in
+the main program, at a task's start and inside a handler; `test_startup_state` the start-up's end
+state (caches on, branch prediction, VTOR, CPACR, FPCCR, TCM enables, MPU off by default).
+
+## 6. Clocks and time
+
+PLL1 drives the system clock by default; the constraints the crate enforces are in section 2.
+`Ada.Real_Time` is kept by SysTick. The runtime's second is cross-checked against
+the board's 32.768 kHz crystal, the one clock that does not descend from the PLL: LPTIM1 clocked
+from the LSE and counted over one second of `Ada.Real_Time` agrees within 2 % at the default point,
+at 400 MHz (VOS1), at 170 MHz (VOS3) and on the HSI at 64 MHz (`test_clock_reference`,
+`test_clock_point_400`, `test_clock_point_170`, `test_clock_hsi64`); the ST-LINK's 8 MHz is about
+one percent high on this board, which the PLL inherits. The timer kernel clocks are twice the APB
+clocks the runtime computes (TIMPRE = 0, RM0468 8.7.6): TIM2 and TIM1 free-running against the
+runtime's second give the ratio 1.000 (`test_timer_clock`). On the NUCLEO-H723ZG, keep the user
+button (PC13) alone while the LSE is a reference (ES0491 2.2.6).
+
+Measured on the NUCLEO-H723ZG at 520 MHz with a 1 MHz logic analyser (+44 ppm against the host):
+an interrupt's latency from the hardware edge to the handler's edge p99 0.500 µs, maximum 0.625 µs
+over 106 033 events, none lost; two periodic tasks of 100 and 500 ms over ten minutes within ±5 µs
+of their periods (the instrument's resolution) once normalised to the board's clock; `delay until`
+never early and at most 1 001 µs late over 10 000 wake-ups.
+
+## 7. Testing
+
+The family uses the repository's harness (`tests/`): `test_runtimes.py` builds each testcase against
+each profile's crate and runs it on the board through OpenOCD, comparing the semihosting output
+with the testcase's `test.out` (CRLF: what `Put_Line` emits). `tests/run_openocd_tests.py` starts
+and stops OpenOCD around each test:
+
+```sh
+cd tests
+python run_openocd_tests.py --target stm32h7xx --profile light-tasking \
+    --openocd /path/to/openocd --working-dir /path/to/work --log-dir /path/to/logs \
+    --pytest-args "-vv --tb=short" hello_world test_guard_regions
+```
+
+A testcase's `opt.py` may define `check_test_conditions` (skip rules), `crate_config_values`
+(the test builds a private copy of the runtime crate with those values - the shared installed
+crate is not rebuilt in place for a different configuration), `linker_switches`,
+`compiler_switches` (for the program's own units; the last-chance handler unit `test_lch.adb`
+stays unswitched), `build_args` (gprbuild arguments after `--`, e.g. `-XLOADER=RAM`) and
+`source_dirs` (per-profile handlers, `lch_light/` and `lch_embedded/`). `tests/test_generated.py`
+checks that the generated crates carry the family's sources byte for byte and the manifest's
+identity; `tests/test_negative_builds.py` builds the refusals and the positive controls without a
+board (about 25 s per row with configuration values).
+
+The gate run before each commit of the family: the generator check, the forty testcases on the
+three profiles, then the negative table. The OpenOCD runner stops the server with a kill after
+turning the target polling off; a graceful `shutdown` wedged the ST-LINK V3 more often than the
+kill (a wedged probe reports `VID:PID 0000:0000` and needs a USB replug).
+
+Not yet measured: a run of hours with tasks, interrupts, floating point and DMA together, and the
+latency measurements at a second clock point.
+
+## 8. Errata (ES0491 rev 9, device revision Z)
+
+| Erratum | Status (rev Z) | Bearing on the runtime |
+|---|---|---|
+| 2.1.1 PLD may line-fill an address that would fault | A | Not met as configured: both conditions require the default memory map to be off, and the guard keeps it on (PRIVDEFENA). An application that turns it off follows the sheet's workaround, which uses region 0 - then the guard's region 0 must move. |
+| 2.1.2 MBIST errors not reported for ICACHE | N | Online MBIST is not used. |
+| 2.1.3 ECC error with both data-cache error banks locked | A | The runtime locks neither DEBR0 nor DEBR1; an application must not lock both. |
+| 2.1.4 Store after cache invalidate without a barrier | A | The runtime does no cache maintenance; the DMA rule in section 3 puts the barrier in, and `test_dma_cache` holds it. |
+| 2.2.1 – 2.2.5 tamper, OTFDEC, SFI, LSE CSS, USB DFU | A, A, N, P, P | Not used by the runtime. |
+| 2.2.6 LSE disturbed by transitions on PC13 | N | The runtime does not use the LSE; the clock cross-check tests do: keep PC13 (the user button) quiet during them. |
+| 2.3 – 2.7 MDMA, BDMA, DMA with USART, DMAMUX, FMC | various | Not used by the runtime; `test_dma_cache` uses DMA1 memory-to-memory, outside 2.5.1. |
+| 2.14 TIM, 2.15 LPTIM | various | The runtime's time base is SysTick. The tests use TIM1/TIM2 free-running and LPTIM1 polled (2.15.1 – 2.15.3 concern Stop mode, the interrupt flag and one-cycle event delays, none of which they touch). |
+| 2.16.1 WWDG not functional below 2.7 V at VOS0/VOS1 | N | The crate's default is VOS0: an application using the window watchdog on a supply below 2.7 V must choose VOS2 or VOS3. |
+| the rest (peripherals) | – | Outside the runtime. |
+
+No erratum of the sheet concerns the RCC, the PWR supply configuration, the flash wait states,
+SysTick or the coupled memories.
+
+## 9. Changes against the upstream generator and families
+
+In the family's own folder: the start-up (`start-common.S`: the supply configuration first, the
+ECC zeroing sized by `TCM_AXI_SHARED`, the TCM enables, the static stack guards); the vector table
+with the five faults routed; `System.BB.Faults`; the stack guard and the fault handler in the
+family's copy of the Armv7-M CPU primitives (`s-bbcppr`); `System.BB.Parameters` with the profile
+checks and the interrupt-stack floor; a profile package generated from the manifest
+(`STM32H7xx_Runtime_Profile`); the linker scripts (DTCM home, `.axisram`, `.sram12`, `.sram4`, the
+window alignment and the four-windows assertion, a RAM-load script); `setup_pll.adb` with the
+range coupling. In the generator: `build-rts.py` registers the family's CPU unit and board support;
+`patch-runtime.py` copies `s-btstch` into light-tasking, generates the profile package and the
+link-time symbols. In the harness: the `opt.py` hooks above, the RAM-image load path, the private
+runtime copy for configured builds, the quiesce before the kill, `test_generated.py`,
+`test_negative_builds.py`.
+
+Candidates for bb-runtimes itself, not only this family: faults reported through the last-chance
+handler in every profile; the MPU stack guard; the ECC initialisation pattern for any Cortex-M7
+with ECC RAM; the harness hooks.
