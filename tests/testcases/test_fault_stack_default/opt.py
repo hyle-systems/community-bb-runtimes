@@ -14,7 +14,8 @@ def crate_config_values(target_info: support.target_info.TargetInfo):
     # The default interrupt stack, on purpose: finding 7 (2026-10-21) - on
     # embedded the fault path overflows it once the window takes its bottom
     # and the window write ends in a hard fault instead of the memory
-    # management fault. Red on embedded until the default is sized.
+    # management fault. Red on embedded until the default was sized: 4096
+    # since 2026-10-22, with a floor of 2048 + the window on embedded.
     return {
         f"{target_info.runtime_crate_name}.Stack_Guard": True,
         f"{target_info.runtime_crate_name}.Stack_Guard_Bytes": 256,

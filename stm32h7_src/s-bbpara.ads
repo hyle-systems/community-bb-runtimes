@@ -114,10 +114,27 @@ package System.BB.Parameters is
    pragma Compile_Time_Error
      (not STM32H7xx_Runtime_Profile.Has_Tasking
         and then (Stack_Guard or else Stack_Guard_Bytes /= 32
-                  or else Interrupt_Stack_Size /= 1024),
+                  or else Interrupt_Stack_Size /= 4096),
       "Stack_Guard, Stack_Guard_Bytes and Interrupt_Stack_Size have no"
         & " effect in the light profile; remove them from the crate's"
         & " configuration values");
+
+   --  On embedded a fault's handling - the raise in System.BB.Faults.Report,
+   --  the unwinder and the last-chance handler - runs in handler mode on the
+   --  interrupt stack and needs about 1.8 KB before the application's handler
+   --  does anything (1792 bytes measured, test_fault_stack_use). With the
+   --  old 1 KB default and a guard window at the stack's bottom the path
+   --  overflowed into the window and escalated to a hard fault; with the
+   --  guard off it walked below the stack silently (finding 7). The floor
+   --  leaves a margin
+   --  above the path; the default, 4 KB, room for interrupt nesting too.
+   --  Light-tasking's handler is a direct call and needs no floor.
+   pragma Compile_Time_Error
+     (STM32H7xx_Runtime_Profile.Has_Exception_Propagation
+        and then Interrupt_Stack_Size
+                 < 2048 + (if Stack_Guard then Stack_Guard_Bytes else 0),
+      "Interrupt_Stack_Size on embedded must be at least 2048 bytes plus the"
+        & " guard window: a fault's handling runs on the interrupt stack");
    --  An MPU no-access region under every stack (System.BB.CPU_Primitives,
    --  "MPU stack guard"); off by default.
    --  Size of each of the interrupt stacks in bytes. While there nominally is

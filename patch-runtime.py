@@ -295,6 +295,7 @@ def main():
         ),
         "max_cpus": "2" if has_libgnarl else "1",
         "has_tasking": "True" if has_libgnarl else "False",
+        "has_exception_propagation": "True" if profile == "embedded" else "False",
     }
 
     target_templates_dir = (

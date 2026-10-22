@@ -10,5 +10,8 @@ package STM32H7xx_Runtime_Profile is
 
    Name        : constant String  := "$(profile)";
    Has_Tasking : constant Boolean := $(has_tasking);
+   --  Embedded propagates exceptions: a fault's handling unwinds on the
+   --  interrupt stack, which has a floor there (System.BB.Parameters).
+   Has_Exception_Propagation : constant Boolean := $(has_exception_propagation);
 
 end STM32H7xx_Runtime_Profile;

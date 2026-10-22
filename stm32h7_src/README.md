@@ -69,3 +69,11 @@ guarded; `test_guard_taskless` and `test_guard_taskless_hit` hold this.
 
 The stack guard's window is configurable, `Stack_Guard_Bytes` = 32 (default), 64, 128, 256, 512 or
 1024: size it to the largest frame of code that is not compiled with `-fstack-check`.
+
+The interrupt stack is 4 KB by default (`Interrupt_Stack_Size`). On embedded a fault's handling - the
+raise, the unwinder and the last-chance handler - runs in handler mode on it and needs about 1.8 KB
+before the application's handler does anything (1792 bytes measured, `test_fault_stack_use`); with the
+old 1 KB default and a window at the stack's bottom the path overflowed into the window and the fault
+escalated to a hard fault, and with the guard off it walked silently below the stack. The embedded
+crate refuses less than 2048 bytes plus the window; `test_fault_stack_default` holds the window write
+with the default stack.
