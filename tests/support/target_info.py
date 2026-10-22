@@ -56,10 +56,18 @@ class TargetInfo:
         self, runtime_crate_dir: pathlib.Path, overridden_config_values: Dict[str, str]
     ):
         self._runtime_crate_dir = runtime_crate_dir
+        self._overridden_config_values = dict(overridden_config_values)
         self._configuration_variables = get_config_vars(runtime_crate_dir)
         self._configuration_values = get_config_values(
             self._configuration_variables, overridden_config_values
         )
+
+    @property
+    def overridden_config_values(self) -> Dict[str, str]:
+        """The configuration values the caller set, without the defaults
+        (configuration_values merges both); a build with any of these gets
+        a private copy of the runtime crate."""
+        return self._overridden_config_values
 
     @property
     def runtime_crate_dir(self) -> pathlib.Path:
