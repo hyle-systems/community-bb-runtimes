@@ -110,8 +110,8 @@ _stm32_start_common:
            the TCMs (PM0253 4.9.1; already enabled by hardware at reset on
            the H7, so this only confirms them). */
 
-        /* ECC initialisation of the AXI SRAM and the ITCM (Hyle Systems,
-           2026-10-17). Their ECC is computed over 64-bit words (RM0468 2.4:
+        /* ECC initialisation of the AXI SRAM and the ITCM, this family's
+           addition. Their ECC is computed over 64-bit words (RM0468 2.4:
            8 ECC bits per 64-bit word for AXI-SRAM and ITCM-RAM), so the
            first sub-word write to a word nobody has written since power-up,
            by this start-up's 32-bit copy of .axisram, by a task or by a DMA,
@@ -257,7 +257,7 @@ guard_init:
            stack - programmed here for every program. The tasking runtime's
            Initialize_CPU programs the same two again and adds each task's
            as it runs; a light-tasking program with no tasking unit never
-           runs it, and had no guard at all (finding 6, 2026-10-21).
+           runs it, and had no guard at all before this block existed.
            __stack_guard_bytes is the crate's --defsym: the window, 32 .. 1024
            (a power of two) when the option is on, 8 (an alignment only) when
            it is off, and the block is skipped below 32; the weak reference

@@ -118,9 +118,9 @@ package body System.BB.CPU_Primitives is
    -- MPU stack guard --
    ---------------------
 
-   --  Hyle Systems, 2026-10-17. When the crate option Stack_Guard is set,
-   --  the MPU (PM0253 4.6) keeps a 32-byte no-access region at the lowest
-   --  32-byte-aligned address of each stack, so the first write past the
+   --  The MPU stack guard, this family's addition. When the crate option
+   --  Stack_Guard is set, the MPU (PM0253 4.6) keeps a no-access window of
+   --  Stack_Guard_Bytes at each stack's bottom, so the first write past the
    --  bottom of a stack is a precise MemManage fault into the fault trap and
    --  the last-chance handler ("memory management fault") instead of a
    --  silent walk into whatever lies below. Three regions are used: 0 for
@@ -130,7 +130,8 @@ package body System.BB.CPU_Primitives is
    --  covered before any switch). The default memory map stays in force
    --  everywhere else (PRIVDEFENA), so cache attributes are untouched; the
    --  MPU is off in HardFault and NMI handlers (HFNMIENA = 0). A guard costs
-   --  its stack between 32 and 63 bytes at the bottom. Applications that
+   --  the interrupt and environment stacks one window (the linker aligns
+   --  them to it) and a task's stack between one and two. Applications that
    --  use the MPU themselves should start at region 3. Between the moment
    --  the guard is moved and the PendSV switch, the outgoing thread runs a
    --  few instructions with the incoming thread's guard, never within its
@@ -186,7 +187,7 @@ package body System.BB.CPU_Primitives is
    --  imported object (Interrupt_Stack_Start'Address), never its value --
    --  the first version read the word stored there, i.e. uninitialised
    --  RAM, and put regions 1 and 2 on an arbitrary window (found by
-   --  review and by tests/testcases/test_guard_regions, 2026-10-17).
+   --  review; tests/testcases/test_guard_regions holds the addresses).
 
    procedure Set_Guard (Region : Word; Stack_Bottom : System.Address);
    pragma Inline (Set_Guard);

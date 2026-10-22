@@ -253,9 +253,9 @@ end Test;
         # configurations is not reliable: the runtime's units are recompiled,
         # but the library's installed ALIs are not always refreshed in the
         # same build, and the next test's binder then reports
-        # "must be recompiled" (seen on stm32h7xx, 2026-10-18; again on
-        # 2026-10-22 for embedded rows of test_negative_builds.py, whose
-        # values arrive through TargetInfo rather than opt.py). Tests without
+        # "must be recompiled" (seen on stm32h7xx, and again for embedded
+        # rows of test_negative_builds.py, whose values arrive through
+        # TargetInfo rather than opt.py). Tests without
         # configuration values keep sharing the installed crate.
         if self.crate_config_values() or self._target_info.overridden_config_values:
             private_crate = self._testcase_working_dir / runtime_crate_dir.name

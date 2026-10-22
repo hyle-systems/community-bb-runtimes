@@ -35,7 +35,7 @@
    through option bytes (all on the AXI side at reset), SRAM1+SRAM2 2 x 16 KB
    contiguous in the D2 domain, SRAM4 16 KB in the D3 domain.
 
-   Placement (decided 2026-10-15): the program's data, zeroed data, the
+   Placement: the program's data, zeroed data, the
    interrupt stack, the main stack, the task stacks and the heap live in the
    DTCM, which the core reaches in one cycle and which is never cached, so
    the runtime's own state is deterministic and immune to cache coherency

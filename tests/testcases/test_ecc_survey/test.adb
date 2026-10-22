@@ -1,6 +1,6 @@
 --  A survey of every RAM ECC monitor after sub-word writes into each RAM:
 --  which memories the start-up leaves with valid ECC everywhere, and which
---  it leaves to the application. Measured 2026-10-17 after a power cycle
+--  it leaves to the application. Measured after a power cycle
 --  (NUCLEO-H723ZG): AXI SRAM, ITCM and the shared monitor 0; both DTCM
 --  banks 0 - the DTCM raises nothing on sub-word first touches, so the
 --  stack and heap area needs no initialisation; SRAM1, SRAM2 and SRAM4

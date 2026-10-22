@@ -7,7 +7,7 @@
 --  them raise no RAMECC flag. The probe uses the last kilobyte of each,
 --  which the runtime's memory map places nothing in. Without the start-up's
 --  zeroing the same program raises the flags on words nobody has written
---  since power-up (measured 2026-10-17 on the AXI SRAM: 0x7).
+--  since power-up (measured on the AXI SRAM: the monitor read 0x7).
 
 with Ada.Text_IO;
 with System;

@@ -3,7 +3,7 @@
 --  last-chance handler all run in handler mode on the interrupt stack. Main
 --  fills the lower 7 KB of an 8 KB interrupt stack with a pattern (the top
 --  kilobyte left alone), reads an unmapped address, and the handler finds
---  the lowest word the path touched. Finding 7 (2026-10-21): with the
+--  the lowest word the path touched. The finding behind it: with the
 --  default 1 KB and a 256-byte guard window at its bottom the path
 --  overflowed into the window, faulted again inside the MemManage handler
 --  and escalated to a hard fault; with the guard off the overflow walks

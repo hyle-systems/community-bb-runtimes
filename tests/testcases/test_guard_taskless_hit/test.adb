@@ -2,8 +2,8 @@
 --  environment stack's guard window (its first word, at __stack_start) must
 --  be a memory management fault, routed to the last-chance handler. Without
 --  the guard the store lands - the window is far below the stack in use -
---  and the program prints so (finding 6: light-tasking before the start-up
---  programmed the static guards, 2026-10-21).
+--  and the program prints so (light-tasking did, before the start-up
+--  programmed the static guards).
 
 with Ada.Text_IO;
 with Interfaces; use Interfaces;

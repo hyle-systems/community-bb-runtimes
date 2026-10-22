@@ -4,10 +4,9 @@
 --  stack's start, each a 256-byte no-access window. The guard was programmed
 --  only by the tasking runtime's CPU initialisation, which a program that
 --  withs no tasking unit never links on light-tasking, so the option
---  protected nothing there (finding 6, 2026-10-21); the start-up now
---  programs the two static guards for every program (decision of
---  2026-10-21). Embedded initialises the tasking runtime for every program
---  and was guarded either way.
+--  protected nothing there; the start-up now programs the two static
+--  guards for every program. Embedded initialises the tasking runtime for
+--  every program and was guarded either way.
 
 with Ada.Text_IO;
 with Interfaces; use Interfaces;

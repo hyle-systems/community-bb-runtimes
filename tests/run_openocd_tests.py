@@ -77,14 +77,14 @@ def start_openocd(openocd: str, target: str, gdb_port: int, sh_port: int, log: p
 
 def stop_openocd(p, graceful=False, quiesce=True, telnet_port=4444):
     """Stop OpenOCD between tests. The default is the hard kill the harness
-    always used: a clean "shutdown" over the telnet port was tried on
-    2026-10-20 after an ST-LINK V3 wedged (probe answering V0J8S3, VID:PID
+    always used: a clean "shutdown" over the telnet port was tried
+    after an ST-LINK V3 wedged (probe answering V0J8S3, VID:PID
     0000:0000, until replugged) and the wedges became more frequent, not
     less - OpenOCD's exit sequence on the probe is the suspect. Kept as an
-    option for experiments. The default since 2026-10-21 first turns the
-    target polling off over the telnet port and waits a moment, so the
-    probe is idle when the process dies (two more wedges that night came
-    right after a passing test, between the kill and the next start)."""
+    option for experiments. The default now first turns the target
+    polling off over the telnet port and waits a moment, so the probe is
+    idle when the process dies (two more wedges came right after a passing
+    test, between the kill and the next start)."""
     if p.poll() is not None:
         return
     if quiesce and not graceful:

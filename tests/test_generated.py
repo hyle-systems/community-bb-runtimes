@@ -3,7 +3,7 @@
  - Every hand-written source of the family (``stm32h7_src/**/*.ads|adb|S``, templates excluded) is present
    in at least one generated crate, and the installed copy is byte-identical to the family's. Presence alone
    is not enough: a family file that the generator never registers can be shadowed by a same-named file from
-   another family's directory, which is how the H7's ``s-bbbosu.adb`` went missing from the crates in 2026-10.
+   another family's directory, which is how the H7's ``s-bbbosu.adb`` once went missing from the crates.
  - The crate manifests carry the repository's maintainer identity, taken from the stm32g4xx template, so the
    crates can be published from the upstream repository's index account.
  - The light-tasking crate carries the stack-checking unit that ``patch-runtime.py`` adds for the family.

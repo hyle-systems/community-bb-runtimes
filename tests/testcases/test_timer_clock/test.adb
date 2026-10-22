@@ -39,7 +39,7 @@ procedure Test is
 
    --  Ada's conversion to Integer rounds to nearest: no "+ 0.5" here. The C
    --  idiom double-rounds, and with a measured ratio within 1e-6 of one it
-   --  flipped the line between 100 and 101 from run to run (2026-10-21).
+   --  flipped the line between 100 and 101 from run to run.
    function Ratio_X1000 (Counts : Unsigned_32; Per_Second : Long_Float; Elapsed : Duration)
      return Integer
    is (Integer (Long_Float (Counts) / (Per_Second * Long_Float (Elapsed)) * 1000.0));

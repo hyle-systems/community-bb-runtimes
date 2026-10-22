@@ -866,13 +866,12 @@ class Stm32F4(arm.cortexm.CortexM4F):
 class CortexMArch_H7(arm.cortexm.CortexMArch):
     def __init__(self):
         super(CortexMArch_H7, self).__init__()
-        # Faults reported, not looped (Hyle Systems, 2026-10-17): the family's
-        # copy of the generic Armv7-M CPU primitives adds Fault_Handler, exported
-        # as __gnat_fault_trap, the target of the five fault vectors in the
-        # family's handler.S (SVD2Ada's default sends them to `fault: b fault`,
-        # a silent loop). It reads IPSR and raises the fault through
-        # GNAT_Error_Handler into the last-chance handler. The upstream unit is
-        # otherwise unchanged; a candidate for an upstream change in bb-runtimes.
+        # The family's copy of the generic Armv7-M CPU primitives adds the MPU
+        # stack guard and the fault handler of the tasking runtimes; the five
+        # fault vectors of the family's handler.S go to __gnat_fault_trap,
+        # which reports through System.BB.Faults in every profile (SVD2Ada's
+        # default sends them to `fault: b fault`, a silent loop). The upstream
+        # unit is otherwise unchanged; a candidate for bb-runtimes itself.
         # Done at this level because CortexMArch is where the generic unit is
         # registered (compare the s-bbbosu.adb precedent, one level down).
         self.remove_source("s-bbcppr.adb")
@@ -882,11 +881,11 @@ class CortexMArch_H7(arm.cortexm.CortexMArch):
 class ArmV7MArch_H7(ArmV7MArch_Patched):
     def __init__(self):
         super(ArmV7MArch_H7, self).__init__()
-        # The family's board support: the patched unit above plus the TCM
-        # size self-check. Registered here so that it replaces the
-        # stm32g4_src copy that ArmV7MArch_Patched installs; without these
-        # two lines the crates ship the G4 file and the family's is dead
-        # (found by tests/test_generated.py, 2026-10-17).
+        # The family's board support, its own copy of the patched unit.
+        # Registered here so that it replaces the stm32g4_src copy that
+        # ArmV7MArch_Patched installs; without these two lines the crates
+        # ship the G4 file and the family's is dead (tests/test_generated.py
+        # holds the identity of every installed file).
         self.remove_source("s-bbbosu.adb")
         self.add_gnarl_sources("stm32h7_src/s-bbbosu.adb")
 

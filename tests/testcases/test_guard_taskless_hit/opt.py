@@ -14,8 +14,8 @@ def crate_config_values(target_info: support.target_info.TargetInfo):
     # An 8 KB interrupt stack: on embedded the fault path (the raise, the
     # unwinder and the handler, in handler mode on the interrupt stack)
     # overflows the default 1 KB once a 256-byte window takes its bottom,
-    # faults again and escalates to a hard fault - finding 7 (2026-10-21),
-    # held by test_fault_stack_default and measured by test_fault_stack_use.
+    # faults again and escalates to a hard fault - the finding held by
+    # test_fault_stack_default and measured by test_fault_stack_use.
     return {
         f"{target_info.runtime_crate_name}.Stack_Guard": True,
         f"{target_info.runtime_crate_name}.Stack_Guard_Bytes": 256,

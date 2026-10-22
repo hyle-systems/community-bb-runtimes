@@ -2,7 +2,7 @@
 --  With -fstack-check its prologue probes about 4.4 KB below the frame, so
 --  the single call asks for more than the stack holds and the check raises
 --  Storage_Error at once: every stack a checked frame runs on must hold its
---  peak use plus the probe's margin (the sizing rule of 2026-10-17).
+--  peak use plus the probe's margin (the manifest's sizing rule).
 
 with System;
 

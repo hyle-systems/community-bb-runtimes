@@ -318,7 +318,7 @@ def main():
             dirs_exist_ok=True,
         )
 
-    # Hyle Systems, 2026-10-17: units a target wants in a profile beyond the
+    # Units a target wants in a profile beyond the
     # generator's scenarios. The stm32h7xx light-tasking profile takes the
     # embedded profile's System.BB.Threads.Stack_Checking (s-btstch): the
     # __gnat_stack_check that -fstack-check calls, which raises Storage_Error

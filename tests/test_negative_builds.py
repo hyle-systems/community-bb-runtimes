@@ -58,7 +58,7 @@ ROWS = [
     # The flash-size variants (L1): the 128 KB and 512 KB maps must link a small program
     ("light", {"MCU_Flash_Memory_Size": "B"}, None),
     ("light", {"MCU_Flash_Memory_Size": "E"}, None),
-    # The interrupt stack (finding 7, decided 2026-10-22): 4096 by default; embedded refuses less than 2048 plus the
+    # The interrupt stack: 4096 by default; embedded refuses less than 2048 plus the
     # window, because a fault's handling runs on it in handler mode (1792 bytes measured); light-tasking has no floor
     ("embedded", {"Interrupt_Stack_Size": 1024}, "at least 2048 bytes"),
     ("embedded", {"Stack_Guard": True, "Stack_Guard_Bytes": 256, "Interrupt_Stack_Size": 2048}, "at least 2048 bytes"),  # 2048 < 2048 + 256
