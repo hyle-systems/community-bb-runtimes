@@ -280,7 +280,7 @@ checks that the generated crates carry the family's sources byte for byte and th
 identity; `tests/test_negative_builds.py` builds the refusals and the positive controls without a
 board (about 25 s per row with configuration values).
 
-The gate run before each commit of the family: the generator check, the forty testcases on the
+The gate run before each commit of the family: the generator check, the testcases (42 at this writing) on the
 three profiles, then the negative table. The OpenOCD runner stops the server with a kill after
 turning the target polling off; a graceful `shutdown` wedged the ST-LINK V3 more often than the
 kill (a wedged probe reports `VID:PID 0000:0000` and needs a USB replug).
@@ -310,7 +310,7 @@ SysTick or the coupled memories.
 
 In the family's own folder: the start-up (`start-common.S`: the supply configuration first, the
 ECC zeroing sized by `TCM_AXI_SHARED`, the TCM enables, the static stack guards); the vector table
-with the five faults routed to the fault stack; `System.BB.Faults`; the stack guard and the fault handler in the
+with the five faults routed to the fault stack; `System.BB.Faults` (the report, parked on a second entry); the stack guard and the fault handler in the
 family's copy of the Armv7-M CPU primitives (`s-bbcppr`); `System.BB.Parameters` with the profile
 checks and the fault-stack floor; a profile package generated from the manifest
 (`STM32H7xx_Runtime_Profile`); the linker scripts (DTCM home, `.axisram`, `.sram12`, `.sram4`, the
