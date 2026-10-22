@@ -232,13 +232,20 @@ __gnat_sys_tick_trap:
 	   exception number from IPSR goes to System.BB.Faults.Report (a libgnat
 	   unit, linked whenever this table is), which raises the fault as an Ada
 	   exception: it ends in the last-chance handler in the shape each
-	   profile's handler expects. Report does not return. */
+	   profile's handler expects. Report does not return, so the trap first
+	   moves the main stack pointer to the top of the fault stack (the
+	   linker's __fault_stack_end, sized by the crate's Fault_Stack_Size):
+	   the handling never runs on the stack that overflowed, nor below it.
+	   LR keeps the EXC_RETURN of the entry, which the unwinder of the
+	   embedded profile meets and stops at. */
 	.thumb_func
 	.globl __gnat_fault_trap
 	.type __gnat_fault_trap, %function
 __gnat_fault_trap:
 	mrs	r0, ipsr
 	ubfx	r0, r0, #0, #9
+	ldr	r1, =__fault_stack_end
+	mov	sp, r1
 	b	__gnat_fault_report
 	.size __gnat_fault_trap, . - __gnat_fault_trap
 

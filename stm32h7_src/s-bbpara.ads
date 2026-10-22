@@ -106,6 +106,12 @@ package System.BB.Parameters is
 
    Stack_Guard : constant Boolean := STM32H7xx_Runtime_Config.Stack_Guard;
    Stack_Guard_Bytes : constant := STM32H7xx_Runtime_Config.Stack_Guard_Bytes;
+   --  An MPU no-access window under every stack (System.BB.CPU_Primitives,
+   --  "MPU stack guard"); off by default.
+
+   Fault_Stack_Size : constant := STM32H7xx_Runtime_Config.Fault_Stack_Size;
+   --  The stack every fault's handling runs on: the fault trap switches to
+   --  it before the report (handler.S, the linker scripts). In every profile.
 
    --  The three options above act in the tasking runtimes only: the light
    --  runtime has no interrupt stack, no context switch and no MPU code. A
@@ -120,26 +126,15 @@ package System.BB.Parameters is
         & " configuration values");
 
    --  On embedded a fault's handling - the raise in System.BB.Faults.Report,
-   --  the unwinder and the last-chance handler - runs in handler mode on the
-   --  interrupt stack and needs about 1.8 KB before the application's handler
-   --  does anything (1792 bytes measured, test_fault_stack_use). With the
-   --  old 1 KB default and a guard window at the stack's bottom the path
-   --  overflowed into the window and escalated to a hard fault; with the
-   --  guard off it walked below the stack silently (finding 7). The floor
-   --  leaves a margin
-   --  above the path; the default, 4 KB, room for interrupt nesting too.
-   --  Light-tasking's handler is a direct call and needs no floor.
+   --  the unwinder and the last-chance handler - needs about 1.8 KB of the
+   --  fault stack before the application's handler does anything (1792 bytes
+   --  measured, test_fault_stack_use); the floor leaves a margin above the
+   --  path. Light-tasking's handler is a direct call and needs no floor.
    pragma Compile_Time_Error
      (STM32H7xx_Runtime_Profile.Has_Exception_Propagation
-        and then Interrupt_Stack_Size
-                 < 2048 + (if Stack_Guard then Stack_Guard_Bytes else 0),
-      "Interrupt_Stack_Size on embedded must be at least 2048 bytes plus the"
-        & " guard window: a fault's handling runs on the interrupt stack");
-   --  An MPU no-access region under every stack (System.BB.CPU_Primitives,
-   --  "MPU stack guard"); off by default.
-   --  Size of each of the interrupt stacks in bytes. While there nominally is
-   --  an interrupt stack per interrupt priority, the entire space is used as a
-   --  single stack.
+        and then Fault_Stack_Size < 2048,
+      "Fault_Stack_Size on embedded must be at least 2048 bytes: a fault's"
+        & " handling runs on the fault stack");
 
    Has_FPU : constant Boolean := True;
    --  Set to true if core has a FPU

@@ -1,14 +1,14 @@
---  How much of the interrupt stack embedded's fault path uses: the fault
---  handler, System.BB.Faults.Report's raise, the unwinder and the
---  last-chance handler all run in handler mode on the interrupt stack. Main
---  fills the lower 7 KB of an 8 KB interrupt stack with a pattern (the top
---  kilobyte left alone), reads an unmapped address, and the handler finds
---  the lowest word the path touched. The finding behind it: with the
---  default 1 KB and a 256-byte guard window at its bottom the path
---  overflowed into the window, faulted again inside the MemManage handler
---  and escalated to a hard fault; with the guard off the overflow walks
---  below the stack silently. The number printed is this toolchain's
---  (gnat_arm_elf 16.1.0); a change in it is worth a look.
+--  How much of the fault stack embedded's fault path uses: the fault trap
+--  switches to the fault stack, and System.BB.Faults.Report's raise, the
+--  unwinder and the last-chance handler run there. Main fills the whole
+--  8 KB fault stack with a pattern (nothing runs on it before a fault),
+--  reads an unmapped address, and the handler finds the lowest word the
+--  path touched. The finding behind it: when the path still ran on the
+--  interrupt stack, its default 1 KB with a 256-byte guard window at the
+--  bottom overflowed into the window, faulted again inside the MemManage
+--  handler and escalated to a hard fault; with the guard off the overflow
+--  walked below the stack silently. The number printed is this
+--  toolchain's (gnat_arm_elf 16.1.0); a change in it is worth a look.
 
 with Ada.Text_IO;
 with Interfaces; use Interfaces;
@@ -19,13 +19,13 @@ with Test_LCH; pragma Unreferenced (Test_LCH);
 
 procedure Test is
    Stack_Start : constant Character
-     with Import, Convention => Asm, External_Name => "__interrupt_stack_start";
+     with Import, Convention => Asm, External_Name => "__fault_stack_start";
    Stack_End : constant Character
-     with Import, Convention => Asm, External_Name => "__interrupt_stack_end";
+     with Import, Convention => Asm, External_Name => "__fault_stack_end";
    Nowhere : Unsigned_32 with Volatile, Import, Address => System'To_Address (16#D000_0000#);
    Value : Unsigned_32;
    A : Integer_Address := To_Integer (Stack_Start'Address);
-   Last : constant Integer_Address := To_Integer (Stack_End'Address) - 1024;
+   Last : constant Integer_Address := To_Integer (Stack_End'Address);
 begin
    while A < Last loop
       declare
@@ -35,7 +35,7 @@ begin
       end;
       A := A + 4;
    end loop;
-   Ada.Text_IO.Put_Line ("interrupt stack filled; reading an unmapped address");
+   Ada.Text_IO.Put_Line ("fault stack filled; reading an unmapped address");
    Value := Nowhere;
    Ada.Text_IO.Put_Line ("the read returned" & Unsigned_32'Image (Value));
    Ada.Text_IO.Put_Line ("===TEST COMPLETE===");

@@ -6,9 +6,9 @@ with System.Storage_Elements; use System.Storage_Elements;
 package body Test_LCH is
 
    Stack_Start : constant Character
-     with Import, Convention => Asm, External_Name => "__interrupt_stack_start";
+     with Import, Convention => Asm, External_Name => "__fault_stack_start";
    Stack_End : constant Character
-     with Import, Convention => Asm, External_Name => "__interrupt_stack_end";
+     with Import, Convention => Asm, External_Name => "__fault_stack_end";
 
    --  No secondary stack in here (it is not the thread's in handler mode):
    --  fixed buffers and Put only.

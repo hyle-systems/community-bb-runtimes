@@ -183,6 +183,17 @@ SECTIONS
    . = ALIGN(0x8);
    __interrupt_stack_end = .;
 
+   /* The fault stack: the fault trap switches to it before the report, so
+      a fault's handling never runs on the stack that overflowed. Its size
+      is the crate's Fault_Stack_Size (__fault_stack_size, a --defsym from
+      the runtime's project file; 4 KB without it). Above the interrupt
+      stack, so that an overflow of its own lands there, not in .bss. */
+   . = ALIGN(0x8);
+   __fault_stack_start = .;
+   . += DEFINED (__fault_stack_size) ? __fault_stack_size : 4096;
+   . = ALIGN(0x8);
+   __fault_stack_end = .;
+
    . = ALIGN(DEFINED (__stack_guard_bytes) ? __stack_guard_bytes : 8);
    __stack_start = .;
    . += DEFINED (__stack_size) ? __stack_size : _DEFAULT_STACK_SIZE;

@@ -57,6 +57,7 @@ compile time, with a message naming the limit.
 | `D1CPRE`, `HPRE`, `D1PPRE`, `D2PPRE1`, `D2PPRE2`, `D3PPRE` | DIV1 .. (DIV1, DIV2, DIV2, DIV2, DIV2, DIV2) | the core, AXI/AHB and APB prescalers |
 | `Supply_Configuration` | nine arrangements (LDO) | the board's core supply, RM0468 Table 30; see below |
 | `Interrupt_Stack_Size` | bytes (4096) | the interrupt stack, shared by every interrupt priority |
+| `Fault_Stack_Size` | bytes (4096) | the fault stack, where every fault's handling runs; section 4 |
 | `Stack_Guard` | true/false (false) | an MPU no-access window under every stack; see section 5 |
 | `Stack_Guard_Bytes` | 32, 64, 128, 256, 512, 1024 (32) | the window's size |
 
@@ -74,8 +75,7 @@ What the crate refuses, and where the check lives:
   windows; at link time, an environment stack smaller than four windows ("environment stack smaller
   than four guard windows", an assertion of the linker script against `__stack_size`)
   (`System.BB.CPU_Primitives`, the linker scripts).
-- On embedded, an `Interrupt_Stack_Size` below 2048 bytes plus the window (`System.BB.Parameters`;
-  section 5 says why).
+- On embedded, a `Fault_Stack_Size` below 2048 bytes (`System.BB.Parameters`; section 5 says why).
 
 `tests/test_negative_builds.py` holds every refusal and the configurations that must build.
 
@@ -147,10 +147,19 @@ test program's handler parks in a loop instead. `test_fault_bus`, `test_fault_us
 (the fault at a priority the handler cannot pre-empt, or a second fault in the handler) escalates
 to a hard fault and is reported as one.
 
-**A last-chance handler on embedded runs in handler mode, on the interrupt stack**, after the
+**Every fault is handled on the fault stack.** The trap moves the main stack pointer to the top of a
+dedicated region (`Fault_Stack_Size`, 4 KB by default, placed between the interrupt and the
+environment stacks) before it reports, so a fault's handling never runs on the stack that
+overflowed and never walks below it. `test_fault_in_handler` overflows the interrupt stack from an
+interrupt handler under the guard and checks that the report, a memory management fault, runs above
+that stack. Before the fault stack, the MemManage handler's own first push landed inside the window
+it had just hit, the fault escalated, and the hard-fault path ran below the interrupt stack, over the
+ECC words and `.bss`, while reporting.
+
+**A last-chance handler on embedded runs in handler mode, on the fault stack**, after the
 unwinder: it must not use the secondary stack - no function returning `String`, no `'Image`, no
 `&` on unconstrained strings; fixed buffers and `Put` only (`test_fault_stack_use`'s handler is an
-example) - and the interrupt stack must hold the whole path (section 5).
+example) - and the fault stack must hold the whole path (section 5).
 
 ## 5. Stacks: the guard, the compiler's check, the sizes
 
@@ -202,16 +211,15 @@ overflows in checked Ada code before the frame is used, the guard catches everyt
 boundary, the fault routing reports what remains. The probe costs about 250 ns on an
 interrupt-to-pin path at 520 MHz.
 
-**The interrupt stack** is 4 KB by default. On embedded a fault's handling - the raise in
-`System.BB.Faults.Report`, the unwinder and the last-chance handler - runs in handler mode on it
-and needs about 1.8 KB before the application's handler does anything: `test_fault_stack_use`
-fills the stack with a pattern, takes a bus fault and finds the lowest word the path touched -
-1792 bytes, rounded up to 256, with gnat_arm_elf 16.1.0 (a change in that number is worth a look).
-Size the interrupt stack for that path, the deepest interrupt nesting (each level a frame plus the
-FPU's lazy-stacking space) and the guard window; the embedded crate refuses less than 2048 bytes
-plus the window, and `test_fault_stack_default` holds a window write with the default stack.
-Light-tasking's handler is a direct call and fits in the default; `test_interrupt_stack_size`
-holds the option.
+**The interrupt stack** is 4 KB by default: size it for the deepest interrupt nesting (each level a
+frame plus the FPU's lazy-stacking space) and the guard window; `test_interrupt_stack_size` holds
+the option. **The fault stack** carries every fault's handling. On embedded that is the raise in
+`System.BB.Faults.Report`, the unwinder and the last-chance handler, about 1.8 KB before the
+application's handler does anything: `test_fault_stack_use` fills the fault stack with a pattern,
+takes a bus fault and finds the lowest word the path touched - 1792 bytes, rounded up to 256, with
+gnat_arm_elf 16.1.0 (a change in that number is worth a look). The embedded crate refuses a fault
+stack below 2048 bytes; `test_fault_stack_default` holds a window write with the default stacks.
+Light-tasking's handler is a direct call and needs less.
 
 **The FPU** is enabled at start-up with lazy stacking; `test_fpu_context` runs two
 double-precision chains that switch every millisecond under a thousand interrupts that use the FPU
@@ -292,11 +300,11 @@ SysTick or the coupled memories.
 
 In the family's own folder: the start-up (`start-common.S`: the supply configuration first, the
 ECC zeroing sized by `TCM_AXI_SHARED`, the TCM enables, the static stack guards); the vector table
-with the five faults routed; `System.BB.Faults`; the stack guard and the fault handler in the
+with the five faults routed to the fault stack; `System.BB.Faults`; the stack guard and the fault handler in the
 family's copy of the Armv7-M CPU primitives (`s-bbcppr`); `System.BB.Parameters` with the profile
-checks and the interrupt-stack floor; a profile package generated from the manifest
+checks and the fault-stack floor; a profile package generated from the manifest
 (`STM32H7xx_Runtime_Profile`); the linker scripts (DTCM home, `.axisram`, `.sram12`, `.sram4`, the
-window alignment and the four-windows assertion, a RAM-load script); `setup_pll.adb` with the
+window alignment and the four-windows assertion, the fault stack, a RAM-load script); `setup_pll.adb` with the
 range coupling. In the generator: `build-rts.py` registers the family's CPU unit and board support;
 `patch-runtime.py` copies `s-btstch` into light-tasking, generates the profile package and the
 link-time symbols. In the harness: the `opt.py` hooks above, the RAM-image load path, the private

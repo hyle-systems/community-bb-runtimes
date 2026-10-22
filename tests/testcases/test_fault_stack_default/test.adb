@@ -1,14 +1,13 @@
---  The window write of test_guard_taskless_hit with the default interrupt
---  stack (1 KB when the fault path was found to overflow it, 4 KB since)
---  and a 256-byte guard window at its bottom. The expected
---  outcome is the memory management fault; on embedded the fault path - the
---  raise, the unwinder and the last-chance handler, all in handler mode on
---  the interrupt stack - needed more than the 768 bytes left, faulted again
---  inside the MemManage handler and escalated to a hard fault (the
---  registers, once the stack was 8 KB: CFSR DACCVIOL + MMARVALID, MMFAR =
---  the window). With the guard off the same overflow
---  walks below the interrupt stack silently. Light-tasking's path, a direct
---  call of the handler, fits.
+--  The window write of test_guard_taskless_hit with the default stacks and
+--  a 256-byte guard window. The expected outcome is the memory management
+--  fault, reported from the fault stack. The history: while a fault's
+--  handling ran on the interrupt stack, embedded's path - the raise, the
+--  unwinder and the last-chance handler - needed more than the 768 bytes a
+--  1 KB interrupt stack left beside the window, faulted again inside the
+--  MemManage handler and escalated to a hard fault (CFSR DACCVIOL +
+--  MMARVALID, MMFAR = the window, once there was room); with the guard off
+--  the same overflow walked below the interrupt stack silently. The fault
+--  stack ends both.
 
 with Ada.Text_IO;
 with Interfaces; use Interfaces;

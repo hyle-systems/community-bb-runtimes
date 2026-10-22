@@ -58,13 +58,18 @@ ROWS = [
     # The flash-size variants (L1): the 128 KB and 512 KB maps must link a small program
     ("light", {"MCU_Flash_Memory_Size": "B"}, None),
     ("light", {"MCU_Flash_Memory_Size": "E"}, None),
-    # The interrupt stack: 4096 by default; embedded refuses less than 2048 plus the
-    # window, because a fault's handling runs on it in handler mode (1792 bytes measured); light-tasking has no floor
-    ("embedded", {"Interrupt_Stack_Size": 1024}, "at least 2048 bytes"),
-    ("embedded", {"Stack_Guard": True, "Stack_Guard_Bytes": 256, "Interrupt_Stack_Size": 2048}, "at least 2048 bytes"),  # 2048 < 2048 + 256
-    ("embedded", {"Stack_Guard": True, "Stack_Guard_Bytes": 256, "Interrupt_Stack_Size": 2304}, None),                   # exactly the floor: builds
-    ("light-tasking", {"Interrupt_Stack_Size": 1024}, None),                                                             # no floor there
+    # The interrupt stack: 4096 by default, no floor since a fault's handling moved to the fault stack (the embedded
+    # rows at 1024 and 2048 were refused while it ran there; they are positive controls now)
+    ("embedded", {"Interrupt_Stack_Size": 1024}, None),
+    ("embedded", {"Stack_Guard": True, "Stack_Guard_Bytes": 256, "Interrupt_Stack_Size": 2048}, None),
+    ("embedded", {"Stack_Guard": True, "Stack_Guard_Bytes": 256, "Interrupt_Stack_Size": 2304}, None),
+    ("light-tasking", {"Interrupt_Stack_Size": 1024}, None),
     ("light", {"Interrupt_Stack_Size": 1024}, "have no"),                                                                # no longer the default: the light crate refuses it
+    # The fault stack (Fault_Stack_Size, 4096 by default): every fault's handling runs on it; embedded refuses
+    # less than 2048 (the path measured 1792 bytes); the light crate accepts the option (its faults are routed too)
+    ("embedded", {"Fault_Stack_Size": 1024}, "at least 2048 bytes"),
+    ("embedded", {"Fault_Stack_Size": 2048}, None),
+    ("light", {"Fault_Stack_Size": 1024}, None),
     # L2: a program larger than the 128 KB map (192 KB of constants) fails at the link with a region overflow,
     # and links against the default map
     ("light", {"MCU_Flash_Memory_Size": "B"}, "`flash' overflowed", [], "big_program"),

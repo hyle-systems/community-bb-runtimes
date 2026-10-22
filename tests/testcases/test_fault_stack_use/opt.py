@@ -12,9 +12,9 @@ def check_test_conditions(target_info: support.target_info.TargetInfo):
 
 
 def crate_config_values(target_info: support.target_info.TargetInfo):
-    # Room to measure in: 8 KB, the guard off (the default)
+    # Room to measure in: an 8 KB fault stack, the guard off (the default)
     return {
-        f"{target_info.runtime_crate_name}.Interrupt_Stack_Size": 8192,
+        f"{target_info.runtime_crate_name}.Fault_Stack_Size": 8192,
     }
 
 

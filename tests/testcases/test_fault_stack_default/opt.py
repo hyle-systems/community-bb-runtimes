@@ -11,11 +11,10 @@ def check_test_conditions(target_info: support.target_info.TargetInfo):
 
 
 def crate_config_values(target_info: support.target_info.TargetInfo):
-    # The default interrupt stack, on purpose: with the old 1 KB default, on
+    # The default stacks, on purpose: with the old 1 KB interrupt stack, on
     # embedded the fault path overflowed it once the window took its bottom
-    # and the window write ends in a hard fault instead of the memory
-    # management fault. Red on embedded until the default was sized: 4096
-    # now, with a floor of 2048 + the window on embedded.
+    # and the window write ended in a hard fault instead of the memory
+    # management fault; the fault stack carries the path now.
     return {
         f"{target_info.runtime_crate_name}.Stack_Guard": True,
         f"{target_info.runtime_crate_name}.Stack_Guard_Bytes": 256,
