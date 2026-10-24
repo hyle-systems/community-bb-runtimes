@@ -320,7 +320,3 @@ range coupling. In the generator: `build-rts.py` registers the family's CPU unit
 link-time symbols. In the harness: the `opt.py` hooks above, the RAM-image load path, the private
 runtime copy for configured builds, the quiesce before the kill, `test_generated.py`,
 `test_negative_builds.py`.
-
-Candidates for bb-runtimes itself, not only this family: faults reported through the last-chance
-handler in every profile; the MPU stack guard; the ECC initialisation pattern for any Cortex-M7
-with ECC RAM; the harness hooks.
