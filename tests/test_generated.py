@@ -84,3 +84,24 @@ def test_light_tasking_stm32h7xx_has_stack_checking_unit():
         pytest.skip("light-tasking crate not generated")
     for unit in ("s-btstch.ads", "s-btstch.adb"):
         assert list(crate("light-tasking").rglob(unit)), f"{unit} missing from the light-tasking crate"
+
+
+# The three flash maps and the RAM map carry the parts' sizes (DS13313 / DS13311: 128 KB on the H730, 512 KB
+# on the E parts, 1 MB on the G parts; the DTCM 128 KB and the AXI SRAM 320 KB at the default TCM sharing).
+MEMORY_LENGTHS = {
+    "ld/flash-128/memory-ROM.ld": {"flash": "128K"},
+    "ld/flash-512/memory-ROM.ld": {"flash": "512K"},
+    "ld/flash-1024/memory-ROM.ld": {"flash": "1024K"},
+    "ld/ram-h72x/memory-RAM.ld": {"dtcm": "128K", "axisram": "320K", "itcm": "64K"},
+}
+
+
+@pytest.mark.parametrize("crate_dir", installed(), ids=lambda p: p.name)
+@pytest.mark.parametrize("script", sorted(MEMORY_LENGTHS))
+def test_memory_maps_carry_the_parts_sizes(crate_dir: pathlib.Path, script: str):
+    text = (crate_dir / script).read_text(encoding="utf-8")
+    for region, length in MEMORY_LENGTHS[script].items():
+        m = re.search(r"^\s*" + region + r"\s*\([a-z!]+\)\s*:\s*ORIGIN\s*=\s*0x[0-9A-Fa-f]+\s*,\s*LENGTH\s*=\s*(\S+)",
+                      text, re.M)
+        assert m, f"{script}: no {region} region"
+        assert m.group(1) == length, f"{script}: {region} LENGTH = {m.group(1)}, expected {length}"

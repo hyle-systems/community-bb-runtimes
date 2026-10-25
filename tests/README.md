@@ -378,6 +378,10 @@ can contain some additional, optional functions to configure the test:
 | `local_crates` | Returns a list of crate names that are in the testcases's directory. These crates will be added to the build. |
 | `external_crates` | Returns a dictionary of crate names from the Alire index and the version to use. |
 | `crate_config_values` | Returns a dictionary of crate configuration variables to set, and the value to set. |
+| `build_args` | Returns a list of extra arguments for gprbuild (e.g. a scenario variable such as `-XLOADER=RAM`). |
+| `compiler_switches` | Returns a list of extra Ada compiler switches for the test program's own units (e.g. `-fstack-check`), not for the runtime. |
+| `linker_switches` | Returns a list of extra linker switches for the test program (e.g. a `--defsym` that sizes the environment stack). |
+| `source_dirs` | Returns a list of additional source directories, relative to the testcase directory (e.g. one last-chance handler per profile). |
 
 Here is an example `opt.py` file:
 

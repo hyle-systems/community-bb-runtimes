@@ -103,6 +103,8 @@ ROWS = [
     ("light", {"MCU_Sub_Family": "H735", "MCU_Flash_Memory_Size": "E"}, "MCU_Flash_Memory_Size"),
     ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "B"}, None),
     ("light", {"MCU_Sub_Family": "H725", "MCU_Flash_Memory_Size": "E"}, None),
+    ("light", {"MCU_Sub_Family": "H733"}, None),   # hello_world on every sub-family: H733 (G, no converter)
+    ("embedded", {"MCU_Sub_Family": "H735"}, None),   # and H735 (G, converter) - H723, H725 and H730 have rows above
     # ST's own 520 MHz point for the NUCLEO-H723ZG (the CubeH7 template): 2 MHz into the wide VCO, M = 4, N = 260
     ("light", {"PLL_M_Div": 4, "PLL_N_Mul": 260}, None),   # ST's own 520 MHz point for the NUCLEO-H723ZG: 2 MHz in, wide VCO 520 MHz
     # The Q and R outputs have the P output's ceiling in the wide range too (DS13313 Table 39): VCO 400 MHz at VOS2,

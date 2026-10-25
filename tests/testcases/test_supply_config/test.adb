@@ -5,6 +5,13 @@
 --  The NUCLEO-H723ZG is an LDO board: LDOEN alone, 2#000010# = 2. The
 --  register is reset only by a power-on reset, so a changed option takes
 --  effect after a power cycle.
+--
+--  What the read-back proves: the bits the crate asked for are in the
+--  register and the voltage levels are valid (ACTVOSRDY). What it cannot
+--  prove: that this image wrote them. The harness resets the board with
+--  system resets, never a power cycle, so a value left by an earlier image
+--  built with the same option survives into this run; only a run after a
+--  power cycle shows the start-up's own write.
 
 with Ada.Text_IO;
 with Interfaces; use Interfaces;

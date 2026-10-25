@@ -1,6 +1,7 @@
---  The window write of test_guard_taskless_hit with the default stacks and
---  a 256-byte guard window. The expected outcome is the memory management
---  fault, reported from the fault stack. The history: while a fault's
+--  The window write of test_guard_taskless_hit with a 1 KB interrupt stack,
+--  the smallest the crate accepts, and a 256-byte guard window. The
+--  expected outcome is the memory management fault, reported from the
+--  fault stack whatever the interrupt stack's size. The history: while a fault's
 --  handling ran on the interrupt stack, embedded's path - the raise, the
 --  unwinder and the last-chance handler - needed more than the 768 bytes a
 --  1 KB interrupt stack left beside the window, faulted again inside the

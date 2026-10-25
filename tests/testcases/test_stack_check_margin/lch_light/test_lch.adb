@@ -1,4 +1,5 @@
 with Ada.Text_IO;
+with Digger;
 with System.Storage_Elements; use System.Storage_Elements;
 
 package body Test_LCH is
@@ -37,6 +38,7 @@ package body Test_LCH is
          end if;
       end loop;
       Ada.Text_IO.Put_Line ("last chance: " & Text (First .. Last));
+      Ada.Text_IO.Put_Line ("the big frame never ran: " & Boolean'Image (Digger.Depth = 0));
       Ada.Text_IO.Put_Line ("===TEST COMPLETE===");
       loop
          null;

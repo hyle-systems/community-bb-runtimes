@@ -50,6 +50,55 @@ DEFAULT_TESTCASES = [
     "test_crate_using_runtime",
 ]
 
+# A target's own testcases, run after the generic list when no testcase is named on the command line
+# (test_harness_units.py checks the list against the testcases that require the target).
+FAMILY_TESTCASES = {
+    "stm32h7xx": [
+        "test_guard_off",
+        "test_guard_regions",
+        "test_fault_bus",
+        "test_fault_usage",
+        "test_fault_escalated",
+        "test_ecc_initialised",
+        "test_tcm_sharing",
+        "test_supply_config",
+        "test_memory_map",
+        "test_ram_loader",
+        "test_ecc_initialised_ram",
+        "test_startup_state",
+        "test_vector_last",
+        "test_stack_alignment",
+        "test_fpu_context",
+        "test_interrupt_stack_size",
+        "test_timer_clock",
+        "test_dma_cache",
+        "test_bsp_verifier",
+        "test_clock_reference",
+        "test_clock_point_400",
+        "test_clock_point_170",
+        "test_clock_hsi64",
+        "test_stack_check",
+        "test_stack_check_margin",
+        "test_stack_check_with_guard",
+        "test_guard_map",
+        "test_guard_taskless",
+        "test_guard_taskless_hit",
+        "test_fault_stack_default",
+        "test_fault_stack_use",
+        "test_fault_in_handler",
+        "test_fault_in_fault",
+        "test_guard_switch",
+        "test_fault_fpu_lazy",
+        "test_guard_taskless_faultstack",
+        "test_guard_idle",
+        "test_clock_point_32",
+        "test_clock_point_st",
+        "test_clock_csi",
+        "test_ecc_survey",   # skips itself unless ECC_SURVEY=1: meaningful right after a power cycle only
+    ],
+}
+
+
 
 def start_openocd(openocd: str, target: str, gdb_port: int, sh_port: int, log: pathlib.Path):
     cmd = [
@@ -130,8 +179,10 @@ def main():
     ap.add_argument("--log-dir", default=None, help="where the per-test logs go (default: <working-dir>/openocd-runs)")
     ap.add_argument("--pytest-args", default="",
                     help="extra arguments for pytest, replacing the default \"-q --tb=line\" (e.g. \"-vv --tb=short --keep-build-files\" to see a failing comparison in full)")
-    ap.add_argument("testcases", nargs="*", default=DEFAULT_TESTCASES)
+    ap.add_argument("testcases", nargs="*", default=None,
+                    help="testcases to run (default: the generic list plus the target's own)")
     args = ap.parse_args()
+    testcases = args.testcases or DEFAULT_TESTCASES + FAMILY_TESTCASES.get(args.target, [])
 
     if not args.openocd:
         sys.exit("openocd not found: pass --openocd, set OPENOCD, or put it on the PATH")
@@ -140,7 +191,7 @@ def main():
     log_dir.mkdir(parents=True, exist_ok=True)
 
     results = []
-    for tc in args.testcases:
+    for tc in testcases:
         test_id = f"test_runtimes.py::test_execute_on_target[{tc}_{args.profile}-{args.target}_]"
         log = log_dir / f"openocd_{tc}_{args.profile}.log"
         t0 = time.time()

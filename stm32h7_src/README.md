@@ -267,9 +267,10 @@ from the LSE and counted over one second of `Ada.Real_Time` agrees within 2 % at
 at 400 MHz (VOS1), at 170 MHz (VOS3) and on the HSI at 64 MHz (`test_clock_reference`,
 `test_clock_point_400`, `test_clock_point_170`, `test_clock_hsi64`); the ST-LINK's 8 MHz is about
 one percent high on this board (measured outside the test suite against the LSE; the clock tests
-themselves only ask for 2 %), which the PLL inherits. The timer kernel clocks are twice the APB
-clocks the runtime computes (TIMPRE = 0, RM0468 8.7.6): TIM2 and TIM1 free-running against the
-runtime's second give the ratio 1.000 (`test_timer_clock`). On the NUCLEO-H723ZG, keep the user
+themselves only ask for 2 %), which the PLL inherits. The timer kernel clocks equal the AHB clock
+for an APB prescaler of 1 or 2 (TIMPRE = 0, RM0468 8.7.6), so twice the APB clocks the runtime
+computes at the default prescaler of 2: TIM2 and TIM1 free-running against the runtime's second
+give the ratio 1.000 (`test_timer_clock`). On the NUCLEO-H723ZG, keep the user
 button (PC13) alone while the LSE is a reference (ES0491 2.2.6).
 
 Measured outside the test suite, with purpose-built programs on the NUCLEO-H723ZG at 520 MHz and an

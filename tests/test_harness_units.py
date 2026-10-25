@@ -115,3 +115,19 @@ def test_expected_outputs_end_at_the_marker():
         if marker in data and not data.endswith(marker):
             offenders.append(f"{out.parent.name}: {data[data.index(marker) + len(marker):]!r} after the marker")
     assert offenders == [], "\n".join(offenders)
+
+
+def test_runner_default_list_carries_every_family_test():
+    """run_openocd_tests.py without a test list runs the generic tests plus the target's own: every testcase
+    whose opt.py requires the stm32h7xx target must be in FAMILY_TESTCASES['stm32h7xx'], or the default run
+    silently leaves it out."""
+    family = set(run_openocd_tests.FAMILY_TESTCASES["stm32h7xx"])
+    requiring = set()
+    for opt in sorted((TESTS / "testcases").glob("*/opt.py")):
+        if "stm32h7xx" in opt.read_text(encoding="utf-8"):
+            requiring.add(opt.parent.name)
+    assert requiring, "no testcase names the target in its opt.py: the scan is broken"
+    missing = sorted(requiring - family)
+    assert missing == [], f"family testcases absent from the runner's default list: {missing}"
+    unknown = sorted(name for name in family if not (TESTS / "testcases" / name).is_dir())
+    assert unknown == [], f"names in the runner's family list without a testcase: {unknown}"

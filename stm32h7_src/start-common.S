@@ -136,7 +136,8 @@ _stm32_start_common:
            carries a valid ECC before anything touches it; .axisram is copied
            afterwards. The bounds come from the device's TCM_AXI_SHARED option
            byte (see ecc_init), so every sharing boots with every word valid.
-           About 200 us at 520 MHz. */
+           It runs before the clock set-up, on the 64 MHz reset clock; the
+           time it takes is not measured. */
 ecc_init:
         /* The sizes come from the device, not from the map: TCM_AXI_SHARED in
            FLASH_OPTSR2_CUR (RM0468 4.9.24) gives 64, 128, 192 or 256 KB of ITCM

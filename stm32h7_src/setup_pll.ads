@@ -28,7 +28,7 @@
 pragma Restrictions (No_Elaboration_Code);
 --  This code is executed before elaboration, so better not need elaboration
 --  code. Ideally this would be No_Elaboration_Code_All, but this procedure
---  depends on STM32G4xx_Runtime_Config which does only has
+--  depends on STM32H7xx_Runtime_Config, which has only
 --  No_Elaboration_Code.
 
 pragma Suppress (All_Checks);

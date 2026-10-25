@@ -1,6 +1,7 @@
 --  Interrupt_Stack_Size = 8192 (opt.py) must be the size the linker gives
 --  the interrupt stack. The stack exists only when the interrupt support is
---  linked, so a handler is attached (and pended once, to use it).
+--  linked, so a handler is attached (and pended once, to use it); the
+--  handler's stack pointer, read inside it, must lie in that stack.
 
 with Ada.Text_IO;
 with Interfaces; use Interfaces;
@@ -20,5 +21,11 @@ begin
    Ada.Text_IO.Put_Line
      ("interrupt stack size =" & Integer_Address'Image (Size)
       & " (handler served " & Boolean'Image (Probes.Handler_SP /= 1) & ")");
+   Ada.Text_IO.Put_Line
+     ("handler SP in the interrupt stack: "
+      & Boolean'Image
+          (Integer_Address (Probes.Handler_SP)
+           in To_Integer (Interrupt_Stack_Start'Address)
+              .. To_Integer (Interrupt_Stack_End'Address) - 1));
    Ada.Text_IO.Put_Line ("===TEST COMPLETE===");
 end Test;

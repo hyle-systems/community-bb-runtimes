@@ -1,2 +1,3 @@
 interrupt stack size = 8192 (handler served TRUE)
+handler SP in the interrupt stack: TRUE
 ===TEST COMPLETE===

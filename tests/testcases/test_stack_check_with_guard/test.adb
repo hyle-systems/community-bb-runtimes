@@ -1,5 +1,5 @@
 --  S3: the compiler's check and the MPU guard together - the check fires first, the
---  guard is the net behind it.
+--  guard is the net behind it. The depth band of test_stack_check applies.
 
 with Ada.Text_IO;
 
