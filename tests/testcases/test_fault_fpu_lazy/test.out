@@ -1,5 +1,9 @@
-digging to just above the window with the FPU in use
+parking 48 bytes above the window with the FPU in use, pending an interrupt
 last chance: memory management fault
-headroom in band: TRUE
+stacking fault: TRUE
+lazy state pending: TRUE
+lazy area in the window: TRUE
 value: 1.50000E+00
+lazy save abandoned: TRUE
+fault pended, not escalated: TRUE
 ===TEST COMPLETE===

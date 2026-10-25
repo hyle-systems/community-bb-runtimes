@@ -1,13 +1,20 @@
---  Lazy floating-point state across a fault into the guard. Digger, with the
---  FPU in use, digs to between 48 and 104 bytes above its own window and
---  writes into the window: a memory management fault whose exception frame
---  keeps its integer part above the window and reserves the lazily stacked
---  FP area inside it (LSPACT set, no write yet). The fault's handling must
+--  Lazy floating-point state across a stacking fault into the guard. Digger,
+--  with the FPU in use, parks its stack pointer 48 bytes above its own window
+--  and pends a device interrupt. The interrupt's entry frame, 104 bytes with
+--  the FPU active, starts 56 bytes inside the window: the push of the integer
+--  part faults (MSTKERR), a memory management fault taken at the fault
+--  handlers' priority, with the lazily reserved FP area straddling the
+--  window's top (LSPACT set, nothing written yet). The fault's handling must
 --  then be free to use the FPU: the last-chance handler prints a Float.
 --  A trap that leaves the lazy state pending lets that first FP instruction
---  save s0-s15 into the no-access window - a fault inside the fault
---  handler, an escalation to hard fault, a second entry into the report,
---  which parks: nothing after "last chance".
+--  save s0-s15 into the no-access window - a fault inside the fault handler,
+--  an escalation to hard fault, a second entry into the report, which parks:
+--  nothing after "last chance".
+--
+--  The trigger is a device interrupt and not the SysTick alarm: the runtime
+--  places the alarm at the fault handlers' priority, so a stacking fault on
+--  its entry escalates to hard fault, where the MPU is off and the lazy
+--  save lands silently.
 
 with Ada.Text_IO;
 

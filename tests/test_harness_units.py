@@ -101,3 +101,17 @@ def test_generator_check_ids_carry_the_target():
     r = subprocess.run([sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider",
                         "test_generated.py", "-k", "stm32h7xx"], cwd=TESTS, capture_output=True, text=True)
     assert "test_generated.py::" in r.stdout, r.stdout[-600:]
+
+
+def test_expected_outputs_end_at_the_marker():
+    # The harness reads the target's output up to "===TEST COMPLETE===" and compares it with test.out
+    # as a whole, so a test.out that carries anything after the marker (a final line break, typically)
+    # can never match. A test.out without the marker is a test that parks by design (test_fault_in_fault)
+    # and is compared on the read's timeout; it is not this check's business.
+    marker = b"===TEST COMPLETE==="
+    offenders = []
+    for out in sorted((TESTS / "testcases").glob("*/test.out")):
+        data = out.read_bytes()
+        if marker in data and not data.endswith(marker):
+            offenders.append(f"{out.parent.name}: {data[data.index(marker) + len(marker):]!r} after the marker")
+    assert offenders == [], "\n".join(offenders)
