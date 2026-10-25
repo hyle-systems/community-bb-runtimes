@@ -318,8 +318,9 @@ checks that the generated crates carry the family's sources byte for byte and th
 identity; `tests/test_negative_builds.py` builds the refusals and the positive controls without a
 board (about 25 s per row with configuration values).
 
-The gate run before each commit of the family: the generator check, the testcases (42 at this writing) on the
-three profiles, then the negative table. The OpenOCD runner stops the server with a kill after
+The gate run before each commit of the family: the generator check, the harness units, the runner's
+default list (upstream's nine generic testcases and the family's 41 at this writing) on the three
+profiles, then the negative table (64 rows at this writing). The OpenOCD runner stops the server with a kill after
 turning the target polling off; a graceful `shutdown` wedged the ST-LINK V3 more often than the
 kill (a wedged probe reports `VID:PID 0000:0000` and needs a USB replug).
 
@@ -355,5 +356,6 @@ window alignment and the four-windows assertion, the fault stack, a RAM-load scr
 range coupling. In the generator: `build-rts.py` registers the family's CPU unit and board support;
 `patch-runtime.py` copies `s-btstch` into light-tasking, generates the profile package and the
 link-time symbols. In the harness: the `opt.py` hooks above, the RAM-image load path, the private
-runtime copy for configured builds, the quiesce before the kill, `test_generated.py`,
-`test_negative_builds.py`.
+runtime copy for configured builds, the quiesce before the kill, the target's own testcases run
+by default (`FAMILY_TESTCASES`), `test_generated.py`, `test_negative_builds.py`,
+`test_harness_units.py`.
