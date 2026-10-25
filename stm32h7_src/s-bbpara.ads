@@ -175,6 +175,19 @@ package System.BB.Parameters is
         & " B (128 KB), the STM32H733 and STM32H735 G (1 MB), the STM32H723"
         & " and STM32H725 E (512 KB) or G");
 
+   --  The converter's output when it feeds the LDO: DS13311 Table 14 lists
+   --  the "SMPS supplies LDO" source at VOS0 only with the converter at
+   --  2.5 V (its note 2); 1.8 V into the LDO is listed from VOS1 down. The
+   --  scaling itself is reachable from every source on this family: the
+   --  LDO-only limit on VOS0 belongs to the STM32H74x/75x (SYSCFG ODEN).
+   pragma Compile_Time_Error
+     (Cfg.Voltage_Scaling in Cfg.VOS0
+        and then Cfg.Supply_Configuration
+          in Cfg.SMPS_1V8_Supplies_LDO
+           | Cfg.SMPS_1V8_Supplies_External_And_LDO,
+      "At VOS0 a converter that feeds the LDO must output 2.5 V (DS13311"
+        & " Table 14): use the SMPS_2V5 arrangement, or VOS1 to VOS3");
+
    Has_FPU : constant Boolean := True;
    --  Set to true if core has a FPU
 

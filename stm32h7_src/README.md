@@ -79,7 +79,8 @@ What the crate refuses, and where the check lives:
 - On embedded, a `Fault_Stack_Size` below 2048 bytes (`System.BB.Parameters`; section 5 says why).
 - An SMPS arrangement on the STM32H723 or STM32H733, which have no converter; a flash size the part
   does not come in; a crystal above 48 MHz; an interrupt stack below 1 KB on the tasking runtimes; a
-  Q or R output above the scaling's ceiling (`System.BB.Parameters`, `setup_pll.adb`).
+  Q or R output above the scaling's ceiling; at VOS0, a converter feeding the LDO at 1.8 V
+  (`System.BB.Parameters`, `setup_pll.adb`).
 
 `tests/test_negative_builds.py` holds every refusal and the configurations that must build.
 
@@ -94,7 +95,12 @@ until one. Read the schematic before changing it. The converter exists on the ST
 the STM32H730 variants with the Q suffix; the crate refuses the SMPS arrangements for the STM32H723
 and STM32H733. For the four arrangements in which the converter supplies external circuits the
 start-up also waits for the converter's external-ready flag (SDEXTRDY), as ST's HAL does; none of
-the SMPS arrangements is tested here. `test_supply_config` reads the bits back.
+the SMPS arrangements is tested here. `test_supply_config` reads the bits back. Every scaling,
+VOS0 included, is reachable from every source on this family (DS13311 Table 14; the LDO-only VOS0
+is the STM32H74x/75x's), with one condition: at VOS0 a converter that feeds the LDO must output
+2.5 V, so the crate refuses `SMPS_1V8_Supplies_LDO` and `SMPS_1V8_Supplies_External_And_LDO` at
+VOS0 and accepts them from VOS1 down. The sheet's supply floors are the board's to meet: VDD at
+least 2.2 V for VOS0 from the converter, 3 V with the converter feeding the LDO at VOS0.
 
 ## 3. Memory map and placement
 

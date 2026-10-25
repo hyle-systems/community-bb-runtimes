@@ -83,8 +83,12 @@ core from the converter, LDO bypassed), `SMPS_1V8_Supplies_LDO` / `SMPS_2V5_Supp
 (row 6). The converter exists on the STM32H725 and STM32H735 and on the STM32H730 variants with the Q
 suffix; the STM32H723 and STM32H733 have none, and the crate refuses the SMPS arrangements for them
 (an invalid byte would lock the register until a power cycle). `Bypass`, an external supply with
-the LDO off, exists on every part. The start-up writes the
-arrangement once into PWR_CR3, before anything touches RAM, and waits for the voltage levels to be
+the LDO off, exists on every part. At VOS0, the default, a converter that feeds the LDO must output
+2.5 V (DS13311 Table 14): the crate refuses `SMPS_1V8_Supplies_LDO` and
+`SMPS_1V8_Supplies_External_And_LDO` there and accepts them from VOS1 down; the scaling itself is
+reachable from every source on this family, the direct converter and bypass included. The start-up
+writes the arrangement once into PWR_CR3, before anything touches RAM, and waits for the voltage
+levels to be
 valid. The register is write-once until a power-on reset: a changed value takes effect after a power
 cycle, and an arrangement the board is not wired for leaves the core unsupplied until one. Read the
 board's schematic before changing it.
