@@ -53,10 +53,14 @@ class TargetInfo:
     """Provides information about a specific runtime crate"""
 
     def __init__(
-        self, runtime_crate_dir: pathlib.Path, overridden_config_values: Dict[str, str]
+        self,
+        runtime_crate_dir: pathlib.Path,
+        overridden_config_values: Dict[str, str],
+        private_runtime_crate: bool = False,
     ):
         self._runtime_crate_dir = runtime_crate_dir
         self._overridden_config_values = dict(overridden_config_values)
+        self._private_runtime_crate = private_runtime_crate
         self._configuration_variables = get_config_vars(runtime_crate_dir)
         self._configuration_values = get_config_values(
             self._configuration_variables, overridden_config_values
@@ -65,9 +69,16 @@ class TargetInfo:
     @property
     def overridden_config_values(self) -> Dict[str, str]:
         """The configuration values the caller set, without the defaults
-        (configuration_values merges both); a build with any of these gets
-        a private copy of the runtime crate."""
+        (configuration_values merges both)."""
         return self._overridden_config_values
+
+    @property
+    def private_runtime_crate(self) -> bool:
+        """True when the caller wants the test built against its own copy
+        of the runtime crate, rebuilt from scratch with these values (the
+        negative-build table). The ordinary configuration rows build
+        against the installed crate, as the harness always did."""
+        return self._private_runtime_crate
 
     @property
     def runtime_crate_dir(self) -> pathlib.Path:

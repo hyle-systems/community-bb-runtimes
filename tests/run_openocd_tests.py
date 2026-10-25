@@ -63,15 +63,25 @@ def start_openocd(openocd: str, target: str, gdb_port: int, sh_port: int, log: p
         "-c", "arm semihosting enable",
         "-c", f"arm semihosting_redirect tcp {sh_port}",
     ]
-    f = open(log, "w")
-    p = subprocess.Popen(cmd, stdout=f, stderr=subprocess.STDOUT)
-    deadline = time.time() + 15
+    with open(log, "w") as f:
+        p = subprocess.Popen(cmd, stdout=f, stderr=subprocess.STDOUT)
+    return wait_for_openocd(p, log, sh_port)
+
+
+def wait_for_openocd(p, log: pathlib.Path, sh_port: int, timeout: float = 15.0):
+    """Wait for the server's ready line (the semihosting port open) in its log. A server that dies
+    reports so; one that never comes up is killed before the error, so it does not hold the ports
+    for every test after it."""
+    deadline = time.time() + timeout
     while time.time() < deadline:
         time.sleep(0.3)
         if p.poll() is not None:
             break
         if f"Listening on port {sh_port}" in log.read_text(errors="replace"):
             return p
+    if p.poll() is None:
+        p.kill()
+        p.wait()
     raise RuntimeError(f"OpenOCD did not come up; see {log}")
 
 

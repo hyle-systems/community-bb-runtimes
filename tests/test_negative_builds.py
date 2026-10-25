@@ -138,7 +138,7 @@ def test_negative_build(row, tmp_path):
         pytest.skip(f"{profile} crate not generated")
     if shutil.which("alr") is None:
         pytest.skip("alr not on PATH")
-    target_info = TargetInfo(crate_dir, values)
+    target_info = TargetInfo(crate_dir, values, private_runtime_crate=bool(values))
     working_dir = tmp_path / "crate"
     harness = TestHarness(testcase, working_dir, target_info)
     harness.setup()

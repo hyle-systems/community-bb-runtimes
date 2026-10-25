@@ -52,6 +52,12 @@ def find_gdb(crate_dir: pathlib.Path, target_triplet: str) -> pathlib.Path:
     return None if path is None else pathlib.Path(path)
 
 
+class GdbCommandError(RuntimeError):
+    """GDB answered a command with ^error: a monitor command the server refused (a flash write that
+    failed, a load_image of a wrong path), a download that did not happen. Without it the test went on
+    and ran whatever was in flash."""
+
+
 class GdbTargetInterface:
     """
     Interfaces with the target via GDB
@@ -214,6 +220,10 @@ class GdbTargetInterface:
 
             for r in responses:
                 if r["type"] == "result":
+                    if r.get("message") == "error":
+                        payload = r.get("payload")
+                        msg = payload.get("msg", "") if isinstance(payload, dict) else str(payload)
+                        raise GdbCommandError(f"GDB command failed: {msg}")
                     return r
 
         raise pygdbmi.constants.GdbTimeoutError()
@@ -315,6 +325,9 @@ class OpenOcdInterface(GdbTargetInterface):
             self.monitor_command(f"reg sp [mrw {base:#x}]")
             self.monitor_command(f"reg pc [expr {{[mrw {base + 4:#x}] & 0xFFFFFFFE}}]")
         else:
+            # The target must be halted for the flash write; the runner starts
+            # the server with a reset halt, a long-lived server may not be there.
+            self.monitor_command("reset halt")
             self.monitor_command(
                 f"flash write_image erase {{{path}}}", timeout_sec=timeout_sec
             )

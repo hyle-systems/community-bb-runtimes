@@ -48,7 +48,7 @@ def normalised(path: pathlib.Path) -> bytes:
 TASKING_ONLY = {'s-bbbosu.adb', 'a-intnam.ads', 's-bbcppr.adb'}
 
 
-@pytest.mark.parametrize("src", list(family_sources()), ids=lambda p: str(p.relative_to(FAMILY)).replace("\\", "/"))
+@pytest.mark.parametrize("src", list(family_sources()), ids=lambda p: "stm32h7xx:" + str(p.relative_to(FAMILY)).replace("\\", "/"))
 def test_family_source_is_installed_unchanged(src: pathlib.Path):
     copies = [f for c in installed() for f in c.rglob(src.name) if f.is_file()]
     assert copies, f"{src.relative_to(FAMILY)} is in no generated crate"
@@ -70,7 +70,7 @@ def manifest_field(text: str, field: str) -> str:
 
 
 @pytest.mark.parametrize("field", ["maintainers", "maintainers-logins", "website"])
-@pytest.mark.parametrize("profile", PROFILES)
+@pytest.mark.parametrize("profile", PROFILES, ids=[f"{p}-stm32h7xx" for p in PROFILES])
 def test_manifest_identity_matches_sibling_family(profile: str, field: str):
     if not crate(profile).is_dir():
         pytest.skip(f"{profile} crate not generated")
@@ -79,7 +79,7 @@ def test_manifest_identity_matches_sibling_family(profile: str, field: str):
     assert actual == expected, f"{profile}: {field} = {actual}, the sibling family has {expected}"
 
 
-def test_light_tasking_has_stack_checking_unit():
+def test_light_tasking_stm32h7xx_has_stack_checking_unit():
     if not crate("light-tasking").is_dir():
         pytest.skip("light-tasking crate not generated")
     for unit in ("s-btstch.ads", "s-btstch.adb"):

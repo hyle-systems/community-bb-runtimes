@@ -254,10 +254,10 @@ end Test;
         # but the library's installed ALIs are not always refreshed in the
         # same build, and the next test's binder then reports
         # "must be recompiled" (seen on stm32h7xx, and again for embedded
-        # rows of test_negative_builds.py, whose values arrive through
-        # TargetInfo rather than opt.py). Tests without
-        # configuration values keep sharing the installed crate.
-        if self.crate_config_values() or self._target_info.overridden_config_values:
+        # rows of test_negative_builds.py, which ask for the copy through
+        # TargetInfo). Every other test, the repository's configuration
+        # rows included, keeps sharing the installed crate.
+        if self.crate_config_values() or self._target_info.private_runtime_crate:
             private_crate = self._testcase_working_dir / runtime_crate_dir.name
             shutil.copytree(
                 src=runtime_crate_dir,
