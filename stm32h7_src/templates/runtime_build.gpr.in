@@ -86,7 +86,14 @@ project Runtime_Build is
     when "Bypass" => Supply_CR3 := "1";
   end case;
 
-  Linker_Switches := ();
+  --  The three link-time symbols the start-up and the linker scripts read,
+  --  whichever the loader: a user script too (LOADER=USER passes nothing
+  --  else; such a script keeps the crate's symbols - start from a copy of
+  --  common-ROM.ld or common-RAM.ld and change the memory map).
+  Linker_Switches :=
+    ("-Wl,--defsym=__stack_guard_bytes=" & Stack_Guard_Align,
+     "-Wl,--defsym=__fault_stack_size=" & $(profile_underscored)_Stm32h7xx_Config.Fault_Stack_Size,
+     "-Wl,--defsym=__supply_cr3=" & Supply_CR3);
 
   case Loader is
     when "ROM" =>
@@ -95,10 +102,7 @@ project Runtime_Build is
          "-L" & Runtime_Build'Project_Dir & "/ld",
          "-L" & Runtime_Build'Project_Dir & "/ld/flash-" & ROM_Size,
          "-L" & Runtime_Build'Project_Dir & "/ld/ram-" & RAM_Size,
-         "-T" & "common-ROM.ld",
-         "-Wl,--defsym=__stack_guard_bytes=" & Stack_Guard_Align,
-         "-Wl,--defsym=__fault_stack_size=" & $(profile_underscored)_Stm32h7xx_Config.Fault_Stack_Size,
-         "-Wl,--defsym=__supply_cr3=" & Supply_CR3);
+         "-T" & "common-ROM.ld");
 
     when "RAM" =>
       Linker_Switches := Linker_Switches &
@@ -106,10 +110,7 @@ project Runtime_Build is
          "-L" & Runtime_Build'Project_Dir & "/ld",
          "-L" & Runtime_Build'Project_Dir & "/ld/flash-" & ROM_Size,
          "-L" & Runtime_Build'Project_Dir & "/ld/ram-" & RAM_Size,
-         "-T" & "common-RAM.ld",
-         "-Wl,--defsym=__stack_guard_bytes=" & Stack_Guard_Align,
-         "-Wl,--defsym=__fault_stack_size=" & $(profile_underscored)_Stm32h7xx_Config.Fault_Stack_Size,
-         "-Wl,--defsym=__supply_cr3=" & Supply_CR3);
+         "-T" & "common-RAM.ld");
 
     when "USER" =>
   end case;

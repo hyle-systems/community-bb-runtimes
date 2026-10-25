@@ -73,6 +73,20 @@ _stm32_start_common:
         tst     r1, #0x2000             /* ACTVOSRDY */
         beq     1b
 
+        /* The four arrangements in which the converter supplies external
+           circuits (SDEXTHP, bit 3 of the byte): wait for SDEXTRDY (PWR_CR3
+           bit 16) as well, as HAL_PWREx_ConfigSupply does - the external
+           rail must be up before the voltage scaling changes. Untested
+           here: this board has no converter. */
+        ldr     r2, =__supply_cr3
+        tst     r2, #0x08               /* SDEXTHP */
+        beq     3f
+        ldr     r0, =0x5802480C         /* PWR_CR3 */
+2:      ldr     r1, [r0]
+        tst     r1, #0x10000            /* SDEXTRDY */
+        beq     2b
+3:
+
         /************************
         * Enable debug Monitor *
         ************************/

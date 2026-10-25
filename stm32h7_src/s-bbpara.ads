@@ -136,6 +136,45 @@ package System.BB.Parameters is
       "Fault_Stack_Size on embedded must be at least 2048 bytes: a fault's"
         & " handling runs on the fault stack");
 
+   --  The interrupt stack carries the tick's handler and the scheduler on
+   --  the tasking runtimes: a floor of 1 KB. (A fault's handling has its
+   --  own stack; the guard's four-windows rule is in CPU_Primitives.)
+   pragma Compile_Time_Error
+     (STM32H7xx_Runtime_Profile.Has_Tasking
+        and then Interrupt_Stack_Size < 1024,
+      "Interrupt_Stack_Size must be at least 1024 bytes on the tasking"
+        & " runtimes");
+
+   package Cfg renames STM32H7xx_Runtime_Config;
+
+   --  The core-supply arrangement must exist on the part (RM0468 6.4,
+   --  Table 30). The STM32H723 and STM32H733 have no SMPS step-down
+   --  converter: on them the byte of an arrangement that uses it is an
+   --  invalid combination, ignored, and the write-once lock then holds the
+   --  register with ACTVOSRDY never set, until a power cycle (6.8.4). The
+   --  STM32H725 and STM32H735 have the converter; the STM32H730 exists both
+   --  ways (the Q suffix), so it is not checked.
+   pragma Compile_Time_Error
+     (Cfg.MCU_Sub_Family in Cfg.H723 | Cfg.H733
+        and then Cfg.Supply_Configuration not in Cfg.LDO | Cfg.Bypass,
+      "This part has no SMPS step-down converter: Supply_Configuration"
+        & " must be LDO or Bypass on the STM32H723 and STM32H733");
+
+   --  The flash size follows the part: STM32H730 128 KB (B) only, STM32H733
+   --  and STM32H735 1 MB (G) only, STM32H723 and STM32H725 512 KB (E) or
+   --  1 MB (G). A map larger than the flash links a program that does not
+   --  fit the device.
+   pragma Compile_Time_Error
+     ((Cfg.MCU_Sub_Family in Cfg.H730
+         and then Cfg.MCU_Flash_Memory_Size not in Cfg.B)
+      or else (Cfg.MCU_Sub_Family in Cfg.H733 | Cfg.H735
+               and then Cfg.MCU_Flash_Memory_Size not in Cfg.G)
+      or else (Cfg.MCU_Sub_Family in Cfg.H723 | Cfg.H725
+               and then Cfg.MCU_Flash_Memory_Size in Cfg.B),
+      "MCU_Flash_Memory_Size does not exist on this part: the STM32H730 is"
+        & " B (128 KB), the STM32H733 and STM32H735 G (1 MB), the STM32H723"
+        & " and STM32H725 E (512 KB) or G");
+
    Has_FPU : constant Boolean := True;
    --  Set to true if core has a FPU
 

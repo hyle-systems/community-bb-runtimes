@@ -48,24 +48,25 @@ ROWS = [
     ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 100}, "Stack_Guard_Bytes must be"),
     ("light", {"Stack_Guard": True, "Stack_Guard_Bytes": 100}, "Stack_Guard_Bytes"),  # the option is meaningless in light and must not be accepted silently
     # Every guarded stack is at least four times the window (the window sits inside the stack at its bottom)
-    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 1024, "Interrupt_Stack_Size": 2048}, "four times"),   # a 2 KB interrupt stack against a 1 KB window
+    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 512, "Interrupt_Stack_Size": 1024}, "four times"),   # a 1 KB interrupt stack against a 512-byte window
     ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 256, "Interrupt_Stack_Size": 1024}, None),   # exactly four times: builds
-    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 1024, "Interrupt_Stack_Size": 4096},
-     "environment stack smaller than four guard windows", ["-Wl,--defsym=__stack_size=3072"]),  # a 3 KB environment stack against a 1 KB window: the linker refuses
-    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 1024, "Interrupt_Stack_Size": 4096},
-     None, ["-Wl,--defsym=__stack_size=4096"]),                                       # exactly four windows: links
-    # The supply configuration (RM0468 Table 30): every value must build; only LDO can run on this board
-    ("light", {"Supply_Configuration": "SMPS"}, None),
-    ("light", {"Supply_Configuration": "SMPS_1V8_Supplies_LDO"}, None),
-    ("light", {"Supply_Configuration": "SMPS_2V5_Supplies_LDO"}, None),
-    ("light", {"Supply_Configuration": "SMPS_1V8_Supplies_External_And_LDO"}, None),
-    ("light", {"Supply_Configuration": "SMPS_2V5_Supplies_External_And_LDO"}, None),
-    ("light", {"Supply_Configuration": "SMPS_1V8_Supplies_External_LDO_Bypass"}, None),
-    ("light", {"Supply_Configuration": "SMPS_2V5_Supplies_External_LDO_Bypass"}, None),
-    ("light", {"Supply_Configuration": "Bypass"}, None),
+    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 512, "Interrupt_Stack_Size": 4096},
+     "environment stack smaller than four guard windows", ["-Wl,--defsym=__stack_size=1536"]),  # a 1.5 KB environment stack against a 512-byte window: the linker refuses
+    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 512, "Interrupt_Stack_Size": 4096},
+     None, ["-Wl,--defsym=__stack_size=2048"]),                                       # exactly four windows: links
+    # The supply configuration (RM0468 Table 30): every value must build on a part with the converter (the H725);
+    # only LDO can run on this board
+    ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS"}, None),
+    ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_1V8_Supplies_LDO"}, None),
+    ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_2V5_Supplies_LDO"}, None),
+    ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_1V8_Supplies_External_And_LDO"}, None),
+    ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_2V5_Supplies_External_And_LDO"}, None),
+    ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_1V8_Supplies_External_LDO_Bypass"}, None),
+    ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_2V5_Supplies_External_LDO_Bypass"}, None),
+    ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "Bypass"}, None),
     ("light", {"Supply_Configuration": "Foo"}, "Supply_Configuration"),  # an unknown value must be refused (an unknown *variable* is silently ignored by Alire)
     # The flash-size variants (L1): the 128 KB and 512 KB maps must link a small program
-    ("light", {"MCU_Flash_Memory_Size": "B"}, None),
+    ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "B"}, None),   # the one part with 128 KB
     ("light", {"MCU_Flash_Memory_Size": "E"}, None),
     # The interrupt stack: 4096 by default, no floor since a fault's handling moved to the fault stack (the embedded
     # rows at 1024 and 2048 were refused while it ran there; they are positive controls now)
@@ -81,7 +82,7 @@ ROWS = [
     ("light", {"Fault_Stack_Size": 1024}, None),
     # L2: a program larger than the 128 KB map (192 KB of constants) fails at the link with a region overflow,
     # and links against the default map
-    ("light", {"MCU_Flash_Memory_Size": "B"}, "`flash' overflowed", [], "big_program"),
+    ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "B"}, "`flash' overflowed", [], "big_program"),
     ("light", {}, None, [], "big_program"),
     # --- The second review (2026-10): each row seen red before its fix ---
     # The idle task's 2 KB stack (the runtime's own, 8-aligned) bounds the window at 512: a 1 KB window rounded up inside
@@ -114,7 +115,8 @@ ROWS = [
     ("light-tasking", {"Interrupt_Stack_Size": 1024}, None),
     # A user linker script (LOADER=USER) links with the crate's own scripts named by hand: the three link-time
     # symbols must come from the crate in every loader case
-    ("light", {}, None, ["-L{crate}/ld", "-L{crate}/ld/flash-1024", "-L{crate}/ld/ram-h72x", "-Tcommon-ROM.ld"],
+    ("light", {}, None, ["-L{crate}/ld", "-L{crate}/ld/flash-1024", "-L{crate}/ld/ram-h72x", "-Tcommon-ROM.ld",
+      "-Wl,--no-warn-rwx-segments"],   # the crate adds this switch for ROM and RAM; a user script adds it itself
      "hello_world", ["-XLOADER=USER"]),
 ]
 

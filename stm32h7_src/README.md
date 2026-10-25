@@ -29,7 +29,7 @@ light_tasking_stm32h7xx = { path = "../community-bb-runtimes/install/light-taski
 and in the project file `with "runtime_build.gpr";` (plus `with "ravenscar_build.gpr";` in the
 tasking profiles), `for Target use Runtime_Build'Target;`, `for Runtime ("Ada") use
 Runtime_Build'Runtime ("Ada");`, and `Runtime_Build.Linker_Switches` in the linker's switches:
-they carry the memory map and two link-time symbols the start-up reads. The crate's own
+they carry the memory map and three link-time symbols the start-up reads. The crate's own
 `long-description` repeats this with the option list.
 
 Which profile: **light** has no tasking and no exception propagation (a raise goes straight to
@@ -46,8 +46,8 @@ compile time, with a message naming the limit.
 | Option | Values (default) | What it does |
 |---|---|---|
 | `MCU_Sub_Family` | H723, H725, H730, H733, H735 (H723) | selects the device's register description (the STM32H723's: the H730/H733/H735 crypto peripherals' interrupts, CRYP 79, OTFDEC1 151, OTFDEC2 152, have slots but no names in `Ada.Interrupts.Names`) |
-| `MCU_Flash_Memory_Size` | B, E, G (G) | the flash map: 128 KB, 512 KB, 1 MB |
-| `HSE_Clock_Frequency` | 4 MHz .. 50 MHz (8 000 000) | the external clock or crystal |
+| `MCU_Flash_Memory_Size` | B, E, G (G) | the flash map: 128 KB, 512 KB, 1 MB; tied to the part (H730 B only, H733/H735 G only, H723/H725 E or G) |
+| `HSE_Clock_Frequency` | 4 MHz .. 50 MHz (8 000 000) | the external clock (to 50 MHz) or crystal (to 48 MHz) |
 | `HSE_Bypass` | true/false (true) | true for a clock signal (the ST-LINK's MCO), false for a crystal |
 | `HSI_Div` | DIV1 .. DIV8 (DIV1) | the 64 MHz internal oscillator's divider |
 | `PLL_Src` | HSE, HSI (HSE) | PLL1's input |
@@ -56,11 +56,11 @@ compile time, with a message naming the limit.
 | `SYSCLK_Src` | HSI, CSI, HSE, PLL1 (PLL1) | the system clock's source |
 | `Voltage_Scaling` | VOS0 .. VOS3 (VOS0) | the core's voltage scaling, which sets the clock maxima |
 | `D1CPRE`, `HPRE`, `D1PPRE`, `D2PPRE1`, `D2PPRE2`, `D3PPRE` | DIV1 .. (DIV1, DIV2, DIV2, DIV2, DIV2, DIV2) | the core, AXI/AHB and APB prescalers |
-| `Supply_Configuration` | nine arrangements (LDO) | the board's core supply, RM0468 Table 30; see below |
-| `Interrupt_Stack_Size` | bytes (4096) | the interrupt stack, shared by every interrupt priority |
+| `Supply_Configuration` | nine arrangements (LDO) | the board's core supply, RM0468 Table 30; the SMPS arrangements only on parts with the converter; see below |
+| `Interrupt_Stack_Size` | bytes, at least 1024 (4096) | the interrupt stack, shared by every interrupt priority |
 | `Fault_Stack_Size` | bytes (4096) | the fault stack, where every fault's handling runs; section 4 |
 | `Stack_Guard` | true/false (false) | an MPU no-access window under every stack; see section 5 |
-| `Stack_Guard_Bytes` | 32, 64, 128, 256, 512, 1024 (32) | the window's size |
+| `Stack_Guard_Bytes` | 32, 64, 128, 256, 512 (32) | the window's size (the runtime's idle task, 2 KB, bounds it) |
 
 What the crate refuses, and where the check lives:
 
@@ -72,11 +72,14 @@ What the crate refuses, and where the check lives:
 - `Interrupt_Stack_Size`, `Stack_Guard` and `Stack_Guard_Bytes` set away from their defaults in the
   light crate, which has no interrupt stack, no context switch and no MPU code
   (`System.BB.Parameters`).
-- A `Stack_Guard_Bytes` that is not one of the six sizes; an interrupt stack smaller than four
+- A `Stack_Guard_Bytes` that is not one of the five sizes; an interrupt stack smaller than four
   windows; at link time, an environment stack smaller than four windows ("environment stack smaller
   than four guard windows", an assertion of the linker script against `__stack_size`)
   (`System.BB.CPU_Primitives`, the linker scripts).
 - On embedded, a `Fault_Stack_Size` below 2048 bytes (`System.BB.Parameters`; section 5 says why).
+- An SMPS arrangement on the STM32H723 or STM32H733, which have no converter; a flash size the part
+  does not come in; a crystal above 48 MHz; an interrupt stack below 1 KB on the tasking runtimes; a
+  Q or R output above the scaling's ceiling (`System.BB.Parameters`, `setup_pll.adb`).
 
 `tests/test_negative_builds.py` holds every refusal and the configurations that must build.
 
@@ -87,7 +90,11 @@ part without the SMPS step-down converter), `SMPS`, `SMPS_1V8_Supplies_LDO`,
 start-up writes it into PWR_CR3 before anything touches RAM and waits for the voltage levels to be
 valid (ACTVOSRDY). The register is write-once until a power-on reset: a changed value takes effect
 after a power cycle, and an arrangement the board is not wired for leaves the core unsupplied
-until one. Read the schematic before changing it. `test_supply_config` reads the bits back.
+until one. Read the schematic before changing it. The converter exists on the STM32H725 and STM32H735 and on
+the STM32H730 variants with the Q suffix; the crate refuses the SMPS arrangements for the STM32H723
+and STM32H733. For the four arrangements in which the converter supplies external circuits the
+start-up also waits for the converter's external-ready flag (SDEXTRDY), as ST's HAL does; none of
+the SMPS arrangements is tested here. `test_supply_config` reads the bits back.
 
 ## 3. Memory map and placement
 
@@ -127,6 +134,11 @@ default sharing; a device set otherwise has less AXI SRAM than they declare. `te
 reads the monitors after start-up (zero on every profile); `test_tcm_sharing` reads the option and
 the sizes the start-up computed. The monitors themselves are the application's: read them once
 after start-up, clear them, arm the ECC interrupt if wanted.
+
+**A user linker script.** Build with `-XLOADER=USER` and the crate passes no `-L` or `-T`, only the
+three `--defsym`s; the start-up and the fault trap read the scripts' symbols, so start from a copy of
+`common-ROM.ld` (or `common-RAM.ld`) and change its memory map; add `-Wl,--no-warn-rwx-segments` yourself,
+which the crate adds for its own two loaders.
 
 **Loading into RAM.** Build with `-XLOADER=RAM` and the image links into the AXI SRAM (`.data` in the
 DTCM), with the vector table at its start; the ECC zeroing then begins after the loaded image. The
@@ -237,7 +249,11 @@ state (caches on, branch prediction, VTOR, CPACR, FPCCR, TCM enables, MPU off by
 
 ## 6. Clocks and time
 
-PLL1 drives the system clock by default; the constraints the crate enforces are in section 2.
+PLL1 drives the system clock by default; the constraints the crate enforces are in section 2. The
+flash latency is programmed in two steps when the target needs fewer wait states than the 64 MHz
+reset clock (RM0468 4.3.8: the clock first, then the latency, when the frequency falls); the HSI
+divider is written whatever its value and the CSI is enabled and waited for when it is the system
+clock, so a bootloader's state does not stand behind the runtime's arithmetic.
 `Ada.Real_Time` is kept by SysTick. The runtime's second is cross-checked against
 the board's 32.768 kHz crystal, the one clock that does not descend from the PLL: LPTIM1 clocked
 from the LSE and counted over one second of `Ada.Real_Time` agrees within 2 % at the default point,

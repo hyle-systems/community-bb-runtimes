@@ -80,8 +80,10 @@ default: the NUCLEO-H723ZG and every part without the SMPS step-down converter),
 core from the converter, LDO bypassed), `SMPS_1V8_Supplies_LDO` / `SMPS_2V5_Supplies_LDO` (row 3),
 `SMPS_1V8_Supplies_External_And_LDO` / `SMPS_2V5_Supplies_External_And_LDO` (row 4),
 `SMPS_1V8_Supplies_External_LDO_Bypass` / `SMPS_2V5_Supplies_External_LDO_Bypass` (row 5), `Bypass`
-(row 6). The converter exists on some parts only (by ST's numbering the STM32H725 and STM32H735; their
-datasheet is not filed here yet) and bypass only where the converter does. The start-up writes the
+(row 6). The converter exists on the STM32H725 and STM32H735 and on the STM32H730 variants with the Q
+suffix; the STM32H723 and STM32H733 have none, and the crate refuses the SMPS arrangements for them
+(an invalid byte would lock the register until a power cycle). `Bypass`, an external supply with
+the LDO off, exists on every part. The start-up writes the
 arrangement once into PWR_CR3, before anything touches RAM, and waits for the voltage levels to be
 valid. The register is write-once until a power-on reset: a changed value takes effect after a power
 cycle, and an arrangement the board is not wired for leaves the core unsupplied until one. Read the
@@ -122,7 +124,8 @@ pragma Compile_Time_Error
 The two static guards - the interrupt stack's and the environment stack's - are programmed by the
 start-up for every program, tasking or not; the running task's follows once the tasking runtime is
 up (a program without a tasking unit has only the environment stack, and it is guarded). The guard uses MPU regions 0 to 2; applications using the MPU themselves should start at region 3. Off
-by default. `Stack_Guard_Bytes` sets the window: 32 (the default), 64, 128, 256, 512 or 1024;
+by default. `Stack_Guard_Bytes` sets the window: 32 (the default), 64, 128, 256 or 512 (the runtime's idle
+task has a 2 KB stack of its own, which holds four of the largest);
 a frame whose first write lands more than the window below the previous stack pointer steps
 over it, so size the window to the largest frame of code that is not compiled with
 `-fstack-check`.
@@ -175,7 +178,7 @@ Supply_Configuration = { type = "Enum", values = ["LDO", "SMPS", "SMPS_1V8_Suppl
 Interrupt_Stack_Size = { type = "Integer", first = 1, default = 4096 }
 Fault_Stack_Size = { type = "Integer", first = 512, default = 4096 }
 Stack_Guard = { type = "Boolean", default = false }
-Stack_Guard_Bytes = { type = "Integer", first = 32, last = 1024, default = 32 }
+Stack_Guard_Bytes = { type = "Integer", first = 32, last = 512, default = 32 }
 
 [[depends-on]]
 gnat_arm_elf = "^16"

@@ -64,7 +64,7 @@ procedure Setup_Pll is
    Activate_PLL : constant Boolean :=
      PLL_P_Used or Config.PLL_Q_Enable or Config.PLL_R_Enable;
 
-   HSI_Div_Used : constant Boolean := Config.HSI_Div /= Config.DIV1;
+   CSI_Used : constant Boolean := Config.SYSCLK_Src = Config.CSI;
 
    HSE_Used : constant Boolean :=
      Config.SYSCLK_Src = Config.HSE
@@ -102,6 +102,21 @@ procedure Setup_Pll is
           (if    HCLK_Freq <=  35_000_000 then 0
            elsif HCLK_Freq <=  70_000_000 then 1
            else 2));
+
+   --  What the reset clock needs: the core comes out of reset on the 64 MHz
+   --  HSI with the AXI undivided, and the latency must stay good for it
+   --  until the switch - 1 wait state at VOS2 and VOS3 (Table 16). The
+   --  latency written before the switch is the larger of the two; the
+   --  target's follows the switch when it is the smaller (RM0468 4.3.8:
+   --  when the frequency falls, the clock first, the latency after).
+   Reset_Clock_Latency : constant :=
+     (case Config.Voltage_Scaling is
+        when Config.VOS0 | Config.VOS1 => 0,
+        when Config.VOS2 | Config.VOS3 => 1);
+   Switch_Latency : constant :=
+     Integer'Max (Flash_Latency, Reset_Clock_Latency);
+   Lower_Latency_After : constant Boolean :=
+     Flash_Latency < Switch_Latency;
 
    --  Maximum frequencies per voltage scaling, DS13313 Table 12: CPU 520 /
    --  400 / 300 / 170 MHz, AXI and AHB 275 / 200 / 150 / 85 MHz, APB half of
@@ -155,6 +170,12 @@ procedure Setup_Pll is
       -------------------------
 
       pragma Compile_Time_Error
+        (HSE_Used and then not Config.HSE_Bypass
+           and then Config.HSE_Clock_Frequency > 48_000_000,
+         "HSE_Clock_Frequency: a crystal is 4 to 48 MHz (RM0468 8.4.1);"
+           & " up to 50 MHz is for an external clock, with HSE_Bypass");
+
+      pragma Compile_Time_Error
         (Activate_PLL and PLL_IN_Freq not in PLL_Input_Range,
          "Invalid PLL configuration. PLL1 input frequency after the /M"
            & " divider must be between 1 and 16 MHz");
@@ -201,6 +222,17 @@ procedure Setup_Pll is
            & " (520 / 400 / 300 / 170 MHz for VOS0 / 1 / 2 / 3, DS13313"
            & " Table 39; D1CPRE does not lift it)");
 
+      --  The Q and R outputs have the same ceiling (Table 39 gives it for
+      --  every PLL1 output); the runtime does not use them, an application
+      --  may.
+      pragma Compile_Time_Error
+        (Activate_PLL
+           and ((Config.PLL_Q_Enable and PLL_Q_Freq > CPU_Max)
+                or (Config.PLL_R_Enable and PLL_R_Freq > CPU_Max)),
+         "PLL1 Q output above the maximum for the selected voltage scaling,"
+           & " or the R output (520 / 400 / 300 / 170 MHz for VOS0 / 1 / 2 /"
+           & " 3, DS13313 Table 39)");
+
       pragma Compile_Time_Error
         (HCLK_Freq > HCLK_Max,
          "AXI/AHB clock above the maximum for the selected voltage scaling"
@@ -233,36 +265,36 @@ procedure Setup_Pll is
            and then PWR_Periph.CSR1.ACTVOSRDY = 1;
       end loop;
 
-      --  Flash latency for the target AXI clock, before raising it, and read
-      --  back as RM0468 4.3.8 requires. After reset the latency is 7, so the
-      --  low-frequency reset clock is always safe.
+      --  Flash latency before the switch, read back as RM0468 4.3.8
+      --  requires: the target's, or what the 64 MHz reset clock still needs
+      --  where that is more (Switch_Latency); the target's then follows the
+      --  switch, at the end.
 
       declare
          ACR : ACR_Register := Flash_Periph.ACR;
       begin
-         ACR.LATENCY    := Flash_Latency;
-         ACR.WRHIGHFREQ := Flash_Latency;
+         ACR.LATENCY    := Switch_Latency;
+         ACR.WRHIGHFREQ := Switch_Latency;
          Flash_Periph.ACR := ACR;
       end;
 
       loop
-         exit when Flash_Periph.ACR.LATENCY = Flash_Latency;
+         exit when Flash_Periph.ACR.LATENCY = Switch_Latency;
       end loop;
 
-      --  HSI divider, if the HSI is not used at its full 64 MHz
+      --  HSI divider: written whatever its value, so that a divider left by
+      --  a bootloader does not stand behind the runtime's arithmetic
 
-      if HSI_Div_Used then
-         RCC_Periph.CR.HSIDIV :=
-           (case Config.HSI_Div is
-              when Config.DIV1 => 2#00#,
-              when Config.DIV2 => 2#01#,
-              when Config.DIV4 => 2#10#,
-              when Config.DIV8 => 2#11#);
+      RCC_Periph.CR.HSIDIV :=
+        (case Config.HSI_Div is
+           when Config.DIV1 => 2#00#,
+           when Config.DIV2 => 2#01#,
+           when Config.DIV4 => 2#10#,
+           when Config.DIV8 => 2#11#);
 
-         loop
-            exit when RCC_Periph.CR.HSIDIVF = 1;
-         end loop;
-      end if;
+      loop
+         exit when RCC_Periph.CR.HSIDIVF = 1;
+      end loop;
 
       --  High-speed external clock, crystal or bypass (RM0468 8.4.1)
 
@@ -401,11 +433,38 @@ procedure Setup_Pll is
                      when Config.HSE  => 2#010#,
                      when Config.PLL1 => 2#011#);
 
+      --  The CSI, if it is the system clock: on and ready (on after reset;
+      --  a bootloader may have turned it off)
+
+      if CSI_Used then
+         RCC_Periph.CR.CSION := 1;
+
+         loop
+            exit when RCC_Periph.CR.CSIRDY = 1;
+         end loop;
+      end if;
+
       RCC_Periph.CFGR.SW := SW_Value;
 
       loop
          exit when RCC_Periph.CFGR.SWS = SW_Value;
       end loop;
+
+      --  The target latency, where the reset clock needed more
+
+      if Lower_Latency_After then
+         declare
+            ACR : ACR_Register := Flash_Periph.ACR;
+         begin
+            ACR.LATENCY    := Flash_Latency;
+            ACR.WRHIGHFREQ := Flash_Latency;
+            Flash_Periph.ACR := ACR;
+         end;
+
+         loop
+            exit when Flash_Periph.ACR.LATENCY = Flash_Latency;
+         end loop;
+      end if;
    end Initialize_Clocks;
 
    ------------------

@@ -147,9 +147,10 @@ package body System.BB.CPU_Primitives is
 
    Guard_Bytes : constant := System.BB.Parameters.Stack_Guard_Bytes;
    pragma Compile_Time_Error
-     ((Guard_Bytes / 32) not in 1 | 2 | 4 | 8 | 16 | 32
+     ((Guard_Bytes / 32) not in 1 | 2 | 4 | 8 | 16
       or else Guard_Bytes mod 32 /= 0,
-      "Stack_Guard_Bytes must be 32, 64, 128, 256, 512 or 1024");
+      "Stack_Guard_Bytes must be 32, 64, 128, 256 or 512 (the idle task's"
+        & " 2 KB stack bounds the window)");
 
    --  The window sits inside the stack at its bottom, so a guarded stack
    --  must be at least four times the window to keep two windows of room.
@@ -165,10 +166,12 @@ package body System.BB.CPU_Primitives is
    Guard_Size_Code : constant :=
      (case Guard_Bytes is
          when 32 => 4, when 64 => 5, when 128 => 6,
-         when 256 => 7, when 512 => 8, when 1024 => 9,
+         when 256 => 7, when 512 => 8,
          when others => 0);
    --  MPU_RASR SIZE: the region is 2**(SIZE + 1) bytes (PM0253 Table 90)
-   --  The guard window, a power of two from 32 (the smallest region) to 1024
+   --  The guard window, a power of two from 32 (the smallest region) to
+   --  512: the runtime's idle task has a 2 KB stack (s-taprop.adb), aligned
+   --  to 8, and the window is rounded up inside it; four windows must fit.
 
    Guard_RASR : constant Word := 16#1000_0000# or (Guard_Size_Code * 2) or 1;
    --  XN; AP = 000, no access for anyone (Table 93); SIZE at bits 5:1;
