@@ -57,9 +57,10 @@ ROWS = [
     # The supply configuration (RM0468 Table 30): every value must build on a part with the converter (the H725);
     # only LDO can run on this board
     ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS"}, None),
-    ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_1V8_Supplies_LDO"}, None),
+    ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_1V8_Supplies_LDO"}, "2.5 V"),   # at VOS0 (the default) a converter feeding the LDO must output 2.5 V, DS13311 Table 14
     ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_2V5_Supplies_LDO"}, None),
-    ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_1V8_Supplies_External_And_LDO"}, None),
+    ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_1V8_Supplies_External_And_LDO"}, "2.5 V"),
+    ("light", {"MCU_Sub_Family": "H725", "Voltage_Scaling": "VOS1", "PLL_N_Mul": 50, "Supply_Configuration": "SMPS_1V8_Supplies_LDO"}, None),   # 1.8 V into the LDO is listed from VOS1 down
     ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_2V5_Supplies_External_And_LDO"}, None),
     ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_1V8_Supplies_External_LDO_Bypass"}, None),
     ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_2V5_Supplies_External_LDO_Bypass"}, None),
