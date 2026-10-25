@@ -140,7 +140,7 @@ procedure Setup_Pll is
    --  00 = 1..2 MHz, 01 = 2..4 MHz, 10 = 4..8 MHz, 11 = 8..16 MHz
 
    PLL_RGE : constant :=
-     (if    PLL_IN_Freq <= 2_000_000 then 2#00#
+     (if    PLL_IN_Freq < 2_000_000 then 2#00#
       elsif PLL_IN_Freq <= 4_000_000 then 2#01#
       elsif PLL_IN_Freq <= 8_000_000 then 2#10#
       else 2#11#);
@@ -148,12 +148,14 @@ procedure Setup_Pll is
    --  The PLL1 input selects the VCO range (DS13313 6.3.11): an input of
    --  1 to 2 MHz runs the medium range, 150 .. 420 MHz with every output
    --  limited to 210 MHz (Table 40); an input of 2 to 16 MHz runs the wide
-   --  range, 192 .. 836 MHz (Table 39). Exactly 2 MHz is in both tables;
-   --  the medium range is taken, as the PLL1RGE code above says 1 .. 2 MHz
-   --  for it (RM0468 8.5.5: a reference lower than or equal to 2 MHz
-   --  selects VCOL).
+   --  range, 192 .. 836 MHz (Table 39). Exactly 2 MHz is in both tables,
+   --  and RM0468 8.5.5 claims it for both VCOs in consecutive sentences
+   --  ("lower or equal to 2 MHz, VCOL"; "equal or higher to 2 MHz, VCOH").
+   --  ST's own CubeH7 configuration for the NUCLEO-H723ZG runs 2 MHz into
+   --  the wide VCO with the 2 .. 4 MHz input code, and so does this
+   --  runtime: the medium range below 2 MHz only.
 
-   PLL_VCO_Medium : constant Boolean := PLL_IN_Freq <= 2_000_000;
+   PLL_VCO_Medium : constant Boolean := PLL_IN_Freq < 2_000_000;
 
    PLL_Medium_Out_Max : constant :=
      (if Config.Voltage_Scaling = Config.VOS3 then 200_000_000

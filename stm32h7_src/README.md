@@ -65,8 +65,9 @@ compile time, with a message naming the limit.
 What the crate refuses, and where the check lives:
 
 - A PLL1 input outside 1 .. 16 MHz after the M divider; a VCO outside its range - 192 .. 836 MHz
-  when the input is 2 .. 16 MHz (the wide range), 150 .. 420 MHz when it is 1 .. 2 MHz (the medium
-  range, whose outputs are also limited); an odd P divider other than 1; a CPU, AXI/AHB or APB clock
+  when the input is 2 .. 16 MHz (the wide range), 150 .. 420 MHz when it is below 2 MHz (the medium
+  range, whose outputs are also limited; exactly 2 MHz runs the wide range, as ST's own configuration
+  for the NUCLEO-H723ZG has it); an odd P divider other than 1; a CPU, AXI/AHB or APB clock
   above the maximum of the selected voltage scaling (520 / 275 / 137.5 MHz at VOS0). The flash wait
   states follow RM0468 Table 16. (`setup_pll.adb`; DS13313 Tables 12, 39 and 40.)
 - `Interrupt_Stack_Size`, `Stack_Guard` and `Stack_Guard_Bytes` set away from their defaults in the
