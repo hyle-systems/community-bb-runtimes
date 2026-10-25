@@ -42,8 +42,8 @@ ROWS = [
     ("light", {"Voltage_Scaling": "VOS3", "PLL_N_Mul": 85, "PLL_P_Div": 4, "HPRE": "DIV2"}, None),   # P out 170: builds
     # At exactly 2 MHz of PLL1 input the loop filter's code says 1-2 MHz: the VCO must be the medium one too
     # (RM0468 8.5.5), whose outputs are limited to 210 MHz: M = 4 from 8 MHz, N = 200 -> 400 MHz is refused there
-    ("light", {"PLL_M_Div": 4, "PLL_N_Mul": 200}, "medium range"),
-    ("light", {"PLL_M_Div": 4, "PLL_N_Mul": 100}, None),   # 200 MHz: builds in the medium range
+    ("light", {"PLL_M_Div": 4, "PLL_N_Mul": 200}, None),   # 2 MHz in selects the wide range, as ST does (CubeH7 template): VCO 400 MHz, P out 400 MHz, builds
+    ("light", {"PLL_M_Div": 4, "PLL_N_Mul": 100}, None),   # 200 MHz: builds, VCO 200 MHz at the wide range's floor
     # The guard-size option
     ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 100}, "Stack_Guard_Bytes must be"),
     ("light", {"Stack_Guard": True, "Stack_Guard_Bytes": 100}, "Stack_Guard_Bytes"),  # the option is meaningless in light and must not be accepted silently
@@ -104,7 +104,7 @@ ROWS = [
     ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "B"}, None),
     ("light", {"MCU_Sub_Family": "H725", "MCU_Flash_Memory_Size": "E"}, None),
     # ST's own 520 MHz point for the NUCLEO-H723ZG (the CubeH7 template): 2 MHz into the wide VCO, M = 4, N = 260
-    ("light", {"PLL_M_Div": 4, "PLL_N_Mul": 260}, None),
+    ("light", {"PLL_M_Div": 4, "PLL_N_Mul": 260}, None),   # ST's own 520 MHz point for the NUCLEO-H723ZG: 2 MHz in, wide VCO 520 MHz
     # The Q and R outputs have the P output's ceiling in the wide range too (DS13313 Table 39): VCO 400 MHz at VOS2,
     # P 200 within, Q 400 above 300
     ("light", {"Voltage_Scaling": "VOS2", "PLL_N_Mul": 50, "PLL_P_Div": 2, "PLL_Q_Enable": True, "PLL_Q_Div": 1}, "Q output above"),
