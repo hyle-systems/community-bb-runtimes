@@ -249,12 +249,26 @@ clocks the runtime computes (TIMPRE = 0, RM0468 8.7.6): TIM2 and TIM1 free-runni
 runtime's second give the ratio 1.000 (`test_timer_clock`). On the NUCLEO-H723ZG, keep the user
 button (PC13) alone while the LSE is a reference (ES0491 2.2.6).
 
-Measured outside the test suite, with purpose-built programs on the NUCLEO-H723ZG at 520 MHz and a
-1 MHz logic analyser (+44 ppm against the host):
-an interrupt's latency from the hardware edge to the handler's edge p99 0.500 µs, maximum 0.625 µs
-over 106 033 events, none lost; two periodic tasks of 100 and 500 ms over ten minutes within ±5 µs
-of their periods (the instrument's resolution) once normalised to the board's clock; `delay until`
-never early and at most 1 001 µs late over 10 000 wake-ups.
+Measured outside the test suite, with purpose-built programs on the NUCLEO-H723ZG at 520 MHz and an
+FX2-based logic analyser (+44 ppm against the host; 8 MHz samples for the latency rows, 200 kHz for
+the ten-minute rows):
+an interrupt's latency from the hardware edge to the handler's edge p99 0.750 µs, maximum 0.875 µs
+over 106 241 events, none lost, and the same under task load (the MPU guard and the compiler's
+stack check cost 0.25 µs on this path against an unguarded build); two periodic tasks of 100 and
+500 ms over ten minutes within ±8 µs of their periods once normalised to the board's clock;
+`delay until` never early and at most 1 001 µs late over 10 000 wake-ups sweeping the deadline's
+phase.
+
+A soak of 17.7 hours on the runtime's clock with everything together - five periodic tasks at four
+priorities, a 10 kHz timer interrupt into a protected handler, double-precision chains at two
+priorities (one of them the environment task, never pausing), DMA transfers through the data cache
+with the maintenance sequence of section 3, a heartbeat on a pin every minute - read off the board
+through the debug port without halting it: 636 million interrupts, their count against the clock
+drifting by 0 (none missed, none doubled), latency at most 1.035 µs; every heartbeat interval exactly
+60 000 ms on the runtime's clock; no wake-up early and none more than 819 µs late (the tick's phase);
+16.2 million rounds of a 4 096-step chain and 636 000 blocks at the second priority without a
+mismatch; 6.36 million DMA transfers without a wrong word; the runtime's second 0.9899 of the
+crystal's, the clock source's error again.
 
 ## 7. Testing
 
@@ -285,8 +299,7 @@ three profiles, then the negative table. The OpenOCD runner stops the server wit
 turning the target polling off; a graceful `shutdown` wedged the ST-LINK V3 more often than the
 kill (a wedged probe reports `VID:PID 0000:0000` and needs a USB replug).
 
-Not yet measured: a run of hours with tasks, interrupts, floating point and DMA together, and the
-latency measurements at a second clock point.
+Not yet measured: the latency measurements at a second clock point.
 
 ## 8. Errata (ES0491 rev 9, device revision Z)
 
