@@ -1,4 +1,4 @@
 MPU_CTRL = 5
-region 1 (interrupt stack): at its start TRUE enabled TRUE 256 bytes TRUE no access TRUE
-region 2 (environment stack): at its start TRUE enabled TRUE 256 bytes TRUE no access TRUE
+region 1 (interrupt stack): programmed iff the stack has a length TRUE, and then at its start, 256 bytes, no access TRUE
+region 2 (environment stack): at its start TRUE enabled TRUE 256 bytes, no access TRUE
 ===TEST COMPLETE===

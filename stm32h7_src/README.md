@@ -124,7 +124,7 @@ power-up (`test_ecc_survey`, after a power cycle: three flags each; the DTCM non
 none). All three placements are cacheable in the default memory map: clean the cache before a DMA
 reads a buffer, invalidate it after a DMA writes one, with a barrier between a cache maintenance
 operation and the store that follows (errata ES0491 2.1.4), or give the buffer an MPU region of its
-own from region 3 up. `test_dma_cache` holds the rule: a DMA1 memory-to-memory transfer between two
+own from region 4 up. `test_dma_cache` holds the rule: a DMA1 memory-to-memory transfer between two
 `.axisram` buffers reads stale data without the maintenance and none with it (0 errors in 10 000
 transfers). Text buffers for semihosting output are read by the host behind the cache too; the
 runtime's own live in the DTCM. `test_memory_map` holds the placements.
@@ -198,7 +198,7 @@ program, tasking or not, from the link-time symbol `__stack_guard_bytes` the cra
 0 follows the running task once the tasking runtime is up (a program with no tasking unit has only
 the environment stack, and it is guarded: `test_guard_taskless`, `test_guard_taskless_hit`). The
 default memory map stays in force everywhere else (PRIVDEFENA); the MPU is off inside HardFault and
-NMI handlers (HFNMIENA clear); applications that use the MPU themselves start at region 3.
+NMI handlers (HFNMIENA clear); applications that use the MPU themselves start at region 4 (the running task's window alternates between regions 0 and 3, so the outgoing task's stays armed through a context switch).
 `test_guard_regions` reads the three regions back; `test_guard_map` writes and reads every memory
 of the map and a peripheral under the guard; `test_guard_off` holds the default.
 

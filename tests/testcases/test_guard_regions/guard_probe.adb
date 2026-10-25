@@ -1,4 +1,5 @@
 with Ada.Text_IO;
+with System.Machine_Code; use System.Machine_Code;
 with System.BB.Threads;
 with System.Storage_Elements; use System.Storage_Elements;
 
@@ -15,6 +16,37 @@ package body Guard_Probe is
 
    ------------
    -- Report --
+   -----------------
+   -- Task_Region --
+   -----------------
+
+   --  The running task's window is in region 0 or 3 (the runtime alternates
+   --  them across context switches): the enabled one whose base is below
+   --  the stack pointer and nearest to it; 99 when neither is.
+   function Task_Region return Unsigned_32 is
+      SP   : Unsigned_32;
+      Best : Integer_Address := 0;
+      Hit  : Unsigned_32 := 99;
+   begin
+      Asm ("mov %0, sp", Outputs => Unsigned_32'Asm_Output ("=r", SP), Volatile => True);
+      for Region in Unsigned_32'(0) .. 3 loop
+         if Region = 0 or else Region = 3 then
+            MPU_RNR := Region;
+            declare
+               RBAR : constant Unsigned_32 := MPU_RBAR;
+               RASR : constant Unsigned_32 := MPU_RASR;
+               Base : constant Integer_Address := Integer_Address (RBAR and not 16#1F#);
+            begin
+               if (RASR and 1) = 1 and then Base <= Integer_Address (SP) and then Base > Best then
+                  Best := Base;
+                  Hit := Region;
+               end if;
+            end;
+         end if;
+      end loop;
+      return Hit;
+   end Task_Region;
+
    ------------
 
    procedure Report (Region : Unsigned_32;
@@ -33,7 +65,7 @@ package body Guard_Probe is
       Base := Integer_Address (RBAR and not 16#1F#);
       Size_Code := Natural (Shift_Right (RASR, 1) and 16#1F#);
       Ada.Text_IO.Put_Line
-        ("region" & Unsigned_32'Image (Region) & " (" & Label & "): enabled "
+        ("region" & (if Label = "task" then " 0/3" else Unsigned_32'Image (Region)) & " (" & Label & "): enabled "
          & Boolean'Image ((RASR and 1) = 1)
          & " size" & Natural'Image (2 ** (Size_Code + 1))
          & " no access " & Boolean'Image ((Shift_Right (RASR, 24) and 7) = 0)
@@ -51,7 +83,7 @@ package body Guard_Probe is
    task body Probe_Task is
       Self : constant System.BB.Threads.Thread_Id := System.BB.Threads.Thread_Self;
    begin
-      Report (0, "task", Self.Bottom_Of_Stack, Exact => False);
+      Report (Task_Region, "task", Self.Bottom_Of_Stack, Exact => False);
       Ada.Synchronous_Task_Control.Set_True (Task_Done);
    end Probe_Task;
 

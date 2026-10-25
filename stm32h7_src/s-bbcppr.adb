@@ -125,17 +125,21 @@ package body System.BB.CPU_Primitives is
    --  the last-chance handler ("memory management fault") instead of a
    --  silent walk into whatever lies below. Three regions are used: 0 for
    --  the running thread, re-programmed before every context switch from
-   --  the next thread's Bottom_Of_Stack; 1 for the interrupt stack; 2 for
-   --  the environment task's stack (its static copy, so the first thread is
-   --  covered before any switch). The default memory map stays in force
-   --  everywhere else (PRIVDEFENA), so cache attributes are untouched; the
-   --  MPU is off in HardFault and NMI handlers (HFNMIENA = 0). A guard costs
-   --  the interrupt and environment stacks one window (the linker aligns
-   --  them to it) and a task's stack between one and two. Applications that
-   --  use the MPU themselves should start at region 3. Between the moment
-   --  the guard is moved and the PendSV switch, the outgoing thread runs a
-   --  few instructions with the incoming thread's guard, never within its
-   --  own stack's range.
+   --  the next thread's Bottom_Of_Stack, in region 0 or 3 - the two
+   --  alternate, so that the outgoing thread's window stays armed while
+   --  the exception entry and the PendSV handler push onto its stack (up to
+   --  about 200 bytes with the FPU; a single moving region left exactly
+   --  those pushes unguarded); 1 for the interrupt stack; 2 for the
+   --  environment task's stack (its static copy, so the first thread is
+   --  covered before any switch). The stale window left in the other
+   --  region sits at the bottom of a suspended thread's stack, which
+   --  nothing writes until that thread runs again under its own window.
+   --  The default memory map stays in force everywhere else (PRIVDEFENA),
+   --  so cache attributes are untouched; the MPU is off in HardFault and
+   --  NMI handlers (HFNMIENA = 0). A guard costs the interrupt and
+   --  environment stacks one window (the linker aligns them to it) and a
+   --  task's stack between one and two. Applications that use the MPU
+   --  themselves should start at region 4.
 
    Stack_Guard : constant Boolean := System.BB.Parameters.Stack_Guard;
 
@@ -177,9 +181,14 @@ package body System.BB.CPU_Primitives is
    --  XN; AP = 000, no access for anyone (Table 93); SIZE at bits 5:1;
    --  ENABLE. TEX, C, B, S are irrelevant for a region nobody may touch.
 
-   Region_Thread      : constant Word := 0;
+   Region_Thread_A    : constant Word := 0;
+   Region_Thread_B    : constant Word := 3;
    Region_Interrupt   : constant Word := 1;
    Region_Environment : constant Word := 2;
+
+   Thread_Region : Word := Region_Thread_B;
+   --  The region holding the running thread's window; the next switch
+   --  programs the other one and makes it current.
 
    Interrupt_Stack_Start : constant Character
      with Import, Convention => Asm,
@@ -390,8 +399,8 @@ package body System.BB.CPU_Primitives is
       SHCSR := SHCSR or 16#7_0000#;
 
       if Stack_Guard then
-         --  At least the three regions we use (DREGION, MPU_TYPE bits 15:8)
-         pragma Assert ((MPU_TYPE / 256) mod 256 >= 3);
+         --  At least the four regions we use (DREGION, MPU_TYPE bits 15:8)
+         pragma Assert ((MPU_TYPE / 256) mod 256 >= 4);
          Set_Guard (Region_Interrupt, Interrupt_Stack_Start'Address);
          Set_Guard (Region_Environment, Environment_Stack_Start'Address);
          MPU_CTRL := 2#101#;  --  ENABLE and PRIVDEFENA, HFNMIENA clear
@@ -434,9 +443,13 @@ package body System.BB.CPU_Primitives is
 
       if Stack_Guard then
          --  The thread about to run is First_Thread; PendSV will make it
-         --  Running_Thread. Its guard goes in before the switch.
+         --  Running_Thread. Its guard goes into the other region before the
+         --  switch; the outgoing thread keeps its own until then and after.
+         Thread_Region :=
+           (if Thread_Region = Region_Thread_A then Region_Thread_B
+            else Region_Thread_A);
          Set_Guard
-           (Region_Thread,
+           (Thread_Region,
             System.BB.Threads.Queues.First_Thread.Bottom_Of_Stack);
       end if;
 
@@ -489,8 +502,8 @@ package body System.BB.CPU_Primitives is
          + (Guard_Bytes - 1)) and not Word'(Guard_Bytes - 1);
    begin
       --  A region previously enabled is disabled before its settings change
-      --  (PM0253 4.6.8); region 0 moves at every context switch, 1 and 2 are
-      --  programmed here again after the start-up's guard_init.
+      --  (PM0253 4.6.8); regions 0 and 3 alternate at the context switches, 1
+      --  and 2 are programmed here again after the start-up's guard_init.
       MPU_RNR  := Region;
       MPU_RASR := 0;
       MPU_RBAR := Base or 16#10# or Region;  --  VALID: selects the region

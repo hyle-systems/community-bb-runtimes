@@ -2,6 +2,7 @@ with Ada.Real_Time; use Ada.Real_Time;
 with Ada.Text_IO;
 with Interfaces; use Interfaces;
 with System;
+with System.Machine_Code; use System.Machine_Code;
 with System.Storage_Elements; use System.Storage_Elements;
 
 package body Switch_Probe is
@@ -14,16 +15,30 @@ package body Switch_Probe is
    Value      : Float := 0.0 with Volatile;
    Window_Top : Integer_Address := 0;
 
-   --  Region 0 is the running task's window: its end from the MPU
-   --  (RASR SIZE field: a region of 2 ** (SIZE + 1) bytes).
+   --  The running task's window is in region 0 or 3 (the runtime alternates
+   --  them across context switches): the enabled one whose base is below
+   --  the stack pointer and nearest to it.
    function Window_End return Integer_Address is
-      RBAR, RASR : Unsigned_32;
+      SP   : Unsigned_32;
+      Best : Integer_Address := 0;
    begin
-      MPU_RNR := 0;
-      RBAR := MPU_RBAR;
-      RASR := MPU_RASR;
-      return Integer_Address (RBAR and not 16#1F#)
-        + 2 ** (Natural (Shift_Right (RASR, 1) and 16#1F#) + 1);
+      Asm ("mov %0, sp", Outputs => Unsigned_32'Asm_Output ("=r", SP), Volatile => True);
+      for Region in Unsigned_32'(0) .. 3 loop
+         if Region = 0 or else Region = 3 then
+            MPU_RNR := Region;
+            declare
+               RBAR : constant Unsigned_32 := MPU_RBAR;
+               RASR : constant Unsigned_32 := MPU_RASR;
+               Base : constant Integer_Address := Integer_Address (RBAR and not 16#1F#);
+               Size : constant Integer_Address := 2 ** (Natural (Shift_Right (RASR, 1) and 16#1F#) + 1);
+            begin
+               if (RASR and 1) = 1 and then Base <= Integer_Address (SP) and then Base > Best then
+                  Best := Base + Size;   --  the window's end
+               end if;
+            end;
+         end if;
+      end loop;
+      return Best;
    end Window_End;
 
    --  One frame per level; the next level is taken only while it would stay

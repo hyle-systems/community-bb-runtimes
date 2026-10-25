@@ -291,13 +291,20 @@ guard_init:
         orr     r1, r1, #1              /* ENABLE */
         sub     r4, r0, #1              /* the window's alignment mask */
         ldr     r2, =0xE000ED9C         /* MPU_RBAR; RASR at +4 */
+        /* Region 1 only where there is an interrupt stack: a light-tasking
+           program without a tasking unit has none (the section is empty,
+           start = end), and a window at its start would sit on the fault
+           stack that follows it. */
         ldr     r3, =__interrupt_stack_start
+        ldr     r0, =__interrupt_stack_end
+        cmp     r3, r0
+        beq     2f
         add     r3, r3, r4
         bic     r3, r3, r4              /* rounded up to the window */
         orr     r3, r3, #0x11           /* VALID, region 1 */
         str     r3, [r2]
         str     r1, [r2, #4]
-        ldr     r3, =__stack_start
+2:      ldr     r3, =__stack_start
         add     r3, r3, r4
         bic     r3, r3, r4
         orr     r3, r3, #0x12           /* VALID, region 2 */
