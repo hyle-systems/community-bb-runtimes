@@ -7,7 +7,9 @@
 --  by the start-up) and reports the restart, then parks. No completion
 --  marker: the harness compares the whole output at its read deadline, as
 --  for test_fault_in_fault. The traceback line is empty: the binder's
---  traceback switch is not set for the test programs.
+--  traceback switch is not set for the test programs. The handler's own
+--  lines end in LF (System.IO), ours in CRLF (Ada.Text_IO); the message
+--  carries the raising unit's name, as the embedded runtime forms it.
 
 with Ada.Text_IO;
 with Interfaces; use Interfaces;

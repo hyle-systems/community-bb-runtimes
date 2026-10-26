@@ -13,7 +13,11 @@ package body Switch_Probe is
    MPU_RASR : Unsigned_32 with Volatile, Import, Address => System'To_Address (16#E000_EDA0#);
 
    Go         : Boolean := False with Volatile;
-   Storm_Left : Natural := 0 with Volatile;
+   Stop_At    : Time := Time_First with Volatile;
+   --  The storm lasts until Stop_At on the runtime's clock, longer than
+   --  Waker's period, so an alarm falls inside it whatever an entry costs.
+   Value      : Float := 0.0 with Volatile;
+   Window_Top : Integer_Address := 0;
 
    NVIC_ISPR0 : Unsigned_32 with Volatile, Import, Address => System'To_Address (16#E000_E200#);
    TIM1_CC_Bit : constant Unsigned_32 :=
@@ -22,14 +26,12 @@ package body Switch_Probe is
    protected body Storm is
       procedure IRQ_Handler is
       begin
-         if Storm_Left > 0 then
-            Storm_Left := Storm_Left - 1;
-            NVIC_ISPR0 := TIM1_CC_Bit;   --  back to back, until the count runs out
+         Storm_Entries := Storm_Entries + 1;
+         if Clock < Stop_At then
+            NVIC_ISPR0 := TIM1_CC_Bit;   --  back to back, until the time is up
          end if;
       end IRQ_Handler;
    end Storm;
-   Value      : Float := 0.0 with Volatile;
-   Window_Top : Integer_Address := 0;
 
    --  The running task's window is in region 0 or 3 (the runtime alternates
    --  them across context switches): the enabled one whose base is below
@@ -57,11 +59,42 @@ package body Switch_Probe is
       return Best;
    end Window_End;
 
-   --  One frame per level (as test_guard_switch); the deepest frame starts the
---  storm before spinning. The next level is taken only while it would stay
-   --  at least 112 bytes above the window, so the deepest frame sits in
-   --  [112, 112 + frame size) and the PendSV save (96 bytes below a 104-byte
-   --  exception frame) crosses the window while the frame itself does not.
+   --  The exact placement, instead of test_guard_switch's band: a stack
+   --  array sized so that the stack pointer inside the block sits Target
+   --  bytes above the window. An exception entry's frame (104 bytes with
+   --  the FPU in use) then fits above the window with 32 bytes to spare,
+   --  and the PendSV save of s16-s31, 64 bytes below that frame, crosses it.
+   --  Nothing is called inside the block: a call's frames would reach the
+   --  window first. The storm starts here and the task spins.
+   Target : constant := 136;
+
+   procedure Park_And_Storm with No_Inline;
+   procedure Park_And_Storm is
+      SP : Integer_Address;
+   begin
+      Stop_At := Clock + Milliseconds (25);   --  before the placement: a call
+      Asm ("mov %0, sp", Outputs => Integer_Address'Asm_Output ("=r", SP), Volatile => True);
+      declare
+         Gap : constant Integer_Address := SP - (Window_Top + Target);
+         Pad : array (1 .. Natural (Gap)) of Unsigned_8 with Volatile;
+         Now : Integer_Address;
+      begin
+         Pad (Pad'First) := 1;
+         Pad (Pad'Last)  := 2;
+         Asm ("mov %0, sp", Outputs => Integer_Address'Asm_Output ("=r", Now), Volatile => True);
+         Headroom := Now - Window_Top;
+         Go := True;
+         NVIC_ISPR0 := TIM1_CC_Bit;     --  the storm's first entry
+         loop
+            exit when Pad (Pad'First) = 0;   --  never: spin until Waker takes the processor
+         end loop;
+      end;
+   end Park_And_Storm;
+
+   --  One frame per level, down to 512 bytes above the window, where
+   --  Park_And_Storm takes over with the exact placement. The recursion
+   --  keeps the frames plain so that nothing below Park_And_Storm's frame
+   --  depends on the compiler's layout.
    procedure Dig (N : Natural; Prev : Integer_Address) with No_Inline;
    procedure Dig (N : Natural; Prev : Integer_Address) is
       Mark : Unsigned_32 with Volatile;
@@ -69,17 +102,11 @@ package body Switch_Probe is
       Step : constant Integer_Address := (if Prev = 0 then 0 else Prev - Here);
    begin
       Mark := Unsigned_32 (N);
-      if N < 100_000 and then (Step = 0 or else Here - Step >= Window_Top + 112) then
+      if N < 100_000 and then (Step = 0 or else Here - Step >= Window_Top + 512) then
          Dig (N + 1, Here);
       else
-         Headroom := Here - Window_Top;
-         Go := True;
-         Ada.Text_IO.Put_Line ("storm started");
-         Storm_Left := 200_000;         --  about 80 ms of handler entries: several alarms
-         NVIC_ISPR0 := TIM1_CC_Bit;
-         loop
-            exit when Mark = 0;   --  never: spin until Waker takes the processor
-         end loop;
+         Ada.Text_IO.Put_Line ("storm started");   --  before the placement: Put_Line's frames need room
+         Park_And_Storm;
       end if;
    end Dig;
 

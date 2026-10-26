@@ -2,4 +2,6 @@ digging towards the window with the FPU in use
 storm started
 last chance: memory management fault
 headroom in band: TRUE
+fault at the save (a data access), not at an exception entry: TRUE
+storm entries above 1000: TRUE
 ===TEST COMPLETE===
