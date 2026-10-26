@@ -27,8 +27,11 @@ begin
       Ada.Text_IO.Put_Line ("MPU on with the guard: " & Boolean'Image (MPU_CTRL = 5));
       Ada.Text_IO.Put_Line ("regions 3 and 7 cleared by the start-up: "
                             & Boolean'Image (not Enabled (3) and then not Enabled (7)));
-      Ada.Text_IO.Put_Line ("the static guards in place (regions 1 and 2): "
-                            & Boolean'Image (Enabled (1) and then Enabled (2)));
+      --  Region 1 is not programmed here: a program without a tasking unit
+      --  has no interrupt stack, and a window at its start would sit on the
+      --  fault stack (test_guard_taskless); region 2 is the environment's.
+      Ada.Text_IO.Put_Line ("the environment guard in place (region 2): "
+                            & Boolean'Image (Enabled (2)));
       Ada.Text_IO.Put_Line ("===TEST COMPLETE===");
    else
       Ada.Text_IO.Put_Line ("first pass: regions 3 and 7 enabled over unused SRAM4, then the hand-over");

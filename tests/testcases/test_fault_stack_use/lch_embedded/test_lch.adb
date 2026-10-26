@@ -10,8 +10,9 @@ package body Test_LCH is
    Stack_End : constant Character
      with Import, Convention => Asm, External_Name => "__fault_stack_end";
 
-   --  No secondary stack in here (it is not the thread's in handler mode):
-   --  fixed buffers and Put only.
+   --  Fixed buffers and Put only, so that the number is the path's alone
+   --  (the secondary stack in handler mode is the interrupted task's and
+   --  works; test_fault_stack_use_alloc measures a handler that uses it).
    procedure Put_Number (N : Natural) is
       R : String (1 .. 8) := (others => ' ');
       X : Natural := N;

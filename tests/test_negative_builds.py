@@ -79,9 +79,12 @@ ROWS = [
     ("light-tasking", {"Interrupt_Stack_Size": 1024}, None),
     ("light", {"Interrupt_Stack_Size": 1024}, "have no effect in the light profile"),                                                                # no longer the default: the light crate refuses it
     # The fault stack (Fault_Stack_Size, 4096 by default): every fault's handling runs on it; embedded refuses
-    # less than 2048 (the path measured 1792 bytes); the light crate accepts the option (its faults are routed too)
-    ("embedded", {"Fault_Stack_Size": 1024}, "at least 2048 bytes"),
-    ("embedded", {"Fault_Stack_Size": 2048}, None),
+    # less than 3072: the path alone measured 1792 bytes, a handler that allocates as the default one does 2048
+    # (test_fault_stack_use, test_fault_stack_use_alloc); the floor holds the default handler with half again. The
+    # light crate accepts the option (its faults are routed too)
+    ("embedded", {"Fault_Stack_Size": 1024}, "at least 3072 bytes"),
+    ("embedded", {"Fault_Stack_Size": 2048}, "at least 3072 bytes"),
+    ("embedded", {"Fault_Stack_Size": 3072}, None),
     ("light", {"Fault_Stack_Size": 1024}, None),
     # L2: a program larger than the 128 KB map (192 KB of constants) fails at the link with a region overflow,
     # and links against the default map

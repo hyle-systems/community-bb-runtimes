@@ -10,6 +10,8 @@ package body Handover is
    Word  : Unsigned_32 with Volatile, Linker_Section => ".sram4";
 
    DCCMVAC      : Unsigned_32 with Volatile, Import, Address => System'To_Address (16#E000_EF68#);
+   RCC_RSR      : Unsigned_32 with Volatile, Import, Address => System'To_Address (16#5802_44D0#);
+   Reset_Flags  : constant Unsigned_32 := 16#5FFE_0000#;   --  the *RSTF bits; RMVF is bit 16
    SysTick_CTRL : Unsigned_32 with Volatile, Import, Address => System'To_Address (16#E000_E010#);
    ICSR         : Unsigned_32 with Volatile, Import, Address => System'To_Address (16#E000_ED04#);
    NVIC_ICER    : array (0 .. 7) of Unsigned_32 with Volatile, Import, Address => System'To_Address (16#E000_E180#);
@@ -22,9 +24,10 @@ package body Handover is
    end Clean_Line;
 
    function Second_Pass return Boolean is
-      Was : constant Boolean := Word = Magic;
+      Marked : constant Boolean := Word = Magic;
+      Was    : constant Boolean := Marked and then (RCC_RSR and Reset_Flags) = 0;
    begin
-      if Was then
+      if Marked then
          Word := 0;
          Clean_Line (Word'Address);
       end if;
@@ -33,6 +36,7 @@ package body Handover is
 
    procedure Mark is
    begin
+      RCC_RSR := RCC_RSR or 2 ** 16;   --  RMVF: a reset from here on is visible
       Word := Magic;
       Clean_Line (Word'Address);
    end Mark;

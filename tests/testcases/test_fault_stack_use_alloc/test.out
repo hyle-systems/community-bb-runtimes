@@ -1,0 +1,5 @@
+fault stack filled; reading an unmapped address
+Unhandled Ada Exception: PROGRAM_ERROR
+Message: System.BB.Faults.Report: bus fault
+fault path with an allocating handler used (rounded up to 256 bytes): 2048
+===TEST COMPLETE===

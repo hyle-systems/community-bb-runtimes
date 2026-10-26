@@ -1,4 +1,5 @@
 with Ada.Real_Time; use Ada.Real_Time;
+with Interfaces.C;
 with System.Machine_Code; use System.Machine_Code;
 
 package body Chains is
