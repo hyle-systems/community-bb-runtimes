@@ -21,6 +21,7 @@ variable, else from the PATH.
 import argparse
 import os
 import pathlib
+import re
 import shlex
 import socket
 import shutil
@@ -103,17 +104,20 @@ FAMILY_TESTCASES = {
         "test_handover_state",
         "test_handover_regions",
         "test_fault_default_lch",
+        "test_fault_stack_use_alloc",
     ],
 }
 
 
 
-def start_openocd(openocd: str, target: str, gdb_port: int, sh_port: int, log: pathlib.Path):
+def start_openocd(openocd: str, target: str, gdb_port: int, sh_port: int, log: pathlib.Path,
+                  telnet_port: int = 4444):
     cmd = [
         openocd,
         "-f", "interface/stlink.cfg",
         "-f", TARGET_CFG[target],
         "-c", f"gdb_port {gdb_port}",
+        "-c", f"telnet_port {telnet_port}",
         "-c", "reset_config srst_only srst_nogate connect_assert_srst",
         "-c", "init",
         "-c", "reset halt",
@@ -183,6 +187,7 @@ def main():
     ap.add_argument("--openocd", default=os.environ.get("OPENOCD") or shutil.which("openocd"))
     ap.add_argument("--gdb-port", type=int, default=3333)
     ap.add_argument("--semihosting-port", type=int, default=4445)
+    ap.add_argument("--telnet-port", type=int, default=4444, help="OpenOCD's telnet port, used to quiesce the target before the kill")
     ap.add_argument("--working-dir", default=None, help="passed to pytest --working-dir")
     ap.add_argument("--log-dir", default=None, help="where the per-test logs go (default: <working-dir>/openocd-runs)")
     ap.add_argument("--pytest-args", default="",
@@ -195,7 +200,7 @@ def main():
     if not args.openocd:
         sys.exit("openocd not found: pass --openocd, set OPENOCD, or put it on the PATH")
 
-    log_dir = pathlib.Path(args.log_dir or (args.working_dir or ".") ) / "openocd-runs"
+    log_dir = pathlib.Path(args.log_dir) if args.log_dir else pathlib.Path(args.working_dir or ".") / "openocd-runs"
     log_dir.mkdir(parents=True, exist_ok=True)
 
     results = []
@@ -204,7 +209,8 @@ def main():
         log = log_dir / f"openocd_{tc}_{args.profile}.log"
         t0 = time.time()
         try:
-            p = start_openocd(args.openocd, args.target, args.gdb_port, args.semihosting_port, log)
+            p = start_openocd(args.openocd, args.target, args.gdb_port, args.semihosting_port, log,
+                              args.telnet_port)
         except RuntimeError as e:
             print(e)
             results.append((tc, "NO-OPENOCD"))
@@ -223,13 +229,14 @@ def main():
             pytest_cmd.append(f"--working-dir={args.working_dir}")
 
         r = subprocess.run(pytest_cmd, cwd=TESTS_DIR, capture_output=True, text=True)
-        stop_openocd(p)
+        stop_openocd(p, telnet_port=args.telnet_port)
 
         out = r.stdout + r.stderr
         (log_dir / f"pytest_{tc}_{args.profile}.log").write_text(out, errors="replace")
+        summary = out.strip().splitlines()[-1] if out.strip() else ""   # pytest's "=== 1 skipped in 3.2s ==="
         if r.returncode != 0:
             verdict = "FAIL"
-        elif "skipped" in out:
+        elif re.search(r"\b\d+ skipped\b", summary):
             verdict = "SKIP"
         else:
             verdict = "PASS"

@@ -122,6 +122,18 @@ class TestHarness:
 
         return self._opt_module.crate_config_values(self._target_info)
 
+    def unswitched_units(self) -> List[str]:
+        """
+        Call unswitched_units() in the testcase's opt.py file, if it exists: the
+        units that must not take compiler_switches (the last-chance handler,
+        test_lch.adb by default: a handler compiled with -fstack-check re-raises
+        from its own prologue when entered below the limit).
+        """
+        if self._opt_module is None or not hasattr(self._opt_module, "unswitched_units"):
+            return ["test_lch.adb"]
+
+        return list(self._opt_module.unswitched_units(self._target_info))
+
     def io_timeout(self) -> float:
         """
         Call io_timeout() in the testcase's opt.py file, if it exists: the
@@ -202,7 +214,7 @@ class TestHarness:
             compiler_package = (
                 "    package Compiler is\n"
                 "        for Switches (\"Ada\") use (" + ", ".join(f'"{sw}"' for sw in self.compiler_switches()) + ");\n"
-                "        for Switches (\"test_lch.adb\") use ();\n"
+                + "".join(f"        for Switches (\"{u}\") use ();\n" for u in self.unswitched_units()) +
                 "    end Compiler;\n"
                 if self.compiler_switches() else "")
 
