@@ -1,0 +1,27 @@
+with Ada.Text_IO;
+with Switch_Probe;
+
+package body Test_LCH is
+
+   procedure Last_Chance_Handler
+     (Except : Ada.Exceptions.Exception_Occurrence)
+   is
+      Text  : constant String := Ada.Exceptions.Exception_Message (Except);
+      First : Positive := Text'First;
+   begin
+      --  Keep what follows the last ": "
+      for I in reverse Text'First .. Text'Last - 1 loop
+         if Text (I) = ':' and then Text (I + 1) = ' ' then
+            First := I + 2;
+            exit;
+         end if;
+      end loop;
+      Ada.Text_IO.Put_Line ("last chance: " & Text (First .. Text'Last));
+            Ada.Text_IO.Put_Line ("headroom in band: " & Boolean'Image (Switch_Probe.Headroom in 104 .. 199));
+      Ada.Text_IO.Put_Line ("===TEST COMPLETE===");
+      loop
+         null;
+      end loop;
+   end Last_Chance_Handler;
+
+end Test_LCH;

@@ -86,22 +86,26 @@ def test_light_tasking_stm32h7xx_has_stack_checking_unit():
         assert list(crate("light-tasking").rglob(unit)), f"{unit} missing from the light-tasking crate"
 
 
-# The three flash maps and the RAM map carry the parts' sizes (DS13313 / DS13311: 128 KB on the H730, 512 KB
-# on the E parts, 1 MB on the G parts; the DTCM 128 KB and the AXI SRAM 320 KB at the default TCM sharing).
-MEMORY_LENGTHS = {
-    "ld/flash-128/memory-ROM.ld": {"flash": "128K"},
-    "ld/flash-512/memory-ROM.ld": {"flash": "512K"},
-    "ld/flash-1024/memory-ROM.ld": {"flash": "1024K"},
-    "ld/ram-h72x/memory-RAM.ld": {"dtcm": "128K", "axisram": "320K", "itcm": "64K"},
+# The three flash maps and the RAM map carry the parts' addresses and sizes (RM0468 Table 6, DS13313 / DS13311:
+# 128 KB on the H730, 512 KB on the E parts, 1 MB on the G parts; the DTCM 128 KB and the AXI SRAM 320 KB at the
+# default TCM sharing; SRAM1 + SRAM2 contiguous as one 32 KB region; SRAM4 16 KB).
+MEMORY_REGIONS = {
+    "ld/flash-128/memory-ROM.ld": {"flash": (0x0800_0000, "128K")},
+    "ld/flash-512/memory-ROM.ld": {"flash": (0x0800_0000, "512K")},
+    "ld/flash-1024/memory-ROM.ld": {"flash": (0x0800_0000, "1024K")},
+    "ld/ram-h72x/memory-RAM.ld": {"itcm": (0x0000_0000, "64K"), "dtcm": (0x2000_0000, "128K"),
+                                  "axisram": (0x2400_0000, "320K"), "sram12": (0x3000_0000, "32K"),
+                                  "sram4": (0x3800_0000, "16K")},
 }
 
 
 @pytest.mark.parametrize("crate_dir", installed(), ids=lambda p: p.name)
-@pytest.mark.parametrize("script", sorted(MEMORY_LENGTHS))
+@pytest.mark.parametrize("script", sorted(MEMORY_REGIONS))
 def test_memory_maps_carry_the_parts_sizes(crate_dir: pathlib.Path, script: str):
     text = (crate_dir / script).read_text(encoding="utf-8")
-    for region, length in MEMORY_LENGTHS[script].items():
-        m = re.search(r"^\s*" + region + r"\s*\([a-z!]+\)\s*:\s*ORIGIN\s*=\s*0x[0-9A-Fa-f]+\s*,\s*LENGTH\s*=\s*(\S+)",
+    for region, (origin, length) in MEMORY_REGIONS[script].items():
+        m = re.search(r"^\s*" + region + r"\s*\([a-z!]+\)\s*:\s*ORIGIN\s*=\s*(0x[0-9A-Fa-f]+)\s*,\s*LENGTH\s*=\s*(\S+)",
                       text, re.M)
         assert m, f"{script}: no {region} region"
-        assert m.group(1) == length, f"{script}: {region} LENGTH = {m.group(1)}, expected {length}"
+        assert int(m.group(1), 16) == origin, f"{script}: {region} ORIGIN = {m.group(1)}, expected {origin:#x}"
+        assert m.group(2) == length, f"{script}: {region} LENGTH = {m.group(2)}, expected {length}"

@@ -1,4 +1,5 @@
 with Ada.Text_IO;
+with Interfaces; use Interfaces;
 with System;
 with System.Machine_Code; use System.Machine_Code;
 with System.Storage_Elements; use System.Storage_Elements;
@@ -7,6 +8,12 @@ package body Test_LCH is
 
    Interrupt_Stack_End : constant Character
      with Import, Convention => Asm, External_Name => "__interrupt_stack_end";
+   Interrupt_Stack_Start : constant Character
+     with Import, Convention => Asm, External_Name => "__interrupt_stack_start";
+   --  The stack pointer at the fault, kept by the trap before it moves to
+   --  the fault stack (Z12 of the fourth review)
+   Fault_SP : constant Unsigned_32
+     with Import, Convention => Asm, External_Name => "__gnat_fault_sp";
 
    procedure Last_Chance_Handler
      (Except : Ada.Exceptions.Exception_Occurrence)
@@ -28,6 +35,10 @@ package body Test_LCH is
       else
          Ada.Text_IO.Put_Line ("reported above the interrupt stack: FALSE");
       end if;
+      Ada.Text_IO.Put_Line
+        ("faulting SP in the interrupt stack: "
+         & Boolean'Image (Integer_Address (Fault_SP) >= To_Integer (Interrupt_Stack_Start'Address)
+                          and then Integer_Address (Fault_SP) <= To_Integer (Interrupt_Stack_End'Address)));
       Ada.Text_IO.Put_Line ("===TEST COMPLETE===");
       loop
          null;

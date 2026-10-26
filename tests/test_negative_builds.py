@@ -1,7 +1,9 @@
 """Negative builds for the stm32h7xx crates: configurations that must be refused at compile time, each
 with the message expected, plus the default configuration as the positive control. No board needed; each row
 builds the hello_world testcase (or the one the row names) against the generated crate with the row's configuration values, so the
-runtime's compile-time checks (setup_pll.adb, s-bbcppr.adb) are what refuse it.
+crate refuses it: its compile-time checks (s-bbpara.ads for the options, setup_pll.adb for the clock tree,
+s-bbcppr.adb for the guard window) or, for a value outside the manifest's range or enumeration, Alire's own
+validation of the configuration (the rows say which).
 
 Run with ``pytest test_negative_builds.py`` from ``tests/`` after ``../generate-runtimes.sh --target stm32h7xx``.
 Not to be run while the on-target runner is building against the same crates. About 25 s per row with configuration values (a private runtime copy), a few seconds without.
@@ -26,7 +28,7 @@ ROWS = [
     ("light", {}, None),
     # The clock tree's own checks (DS13313 Tables 12 and 39-40, RM0468 Table 16 and 8.7.11)
     ("light", {"PLL_M_Div": 16}, "between 1 and 16 MHz"),                        # 0.5 MHz into the PLL
-    ("light", {"PLL_N_Mul": 10}, "VCO"),                                           # VCO 80 MHz, below both ranges
+    ("light", {"PLL_N_Mul": 10}, "VCO must be 192 .. 836 MHz"),                                           # VCO 80 MHz, below both ranges
     ("light", {"PLL_P_Div": 3}, "must be 1 or even"),
     ("light", {"PLL_N_Mul": 69}, "CPU clock above the maximum"),                   # 552 MHz: the boost point is unsupported
     ("light", {"Voltage_Scaling": "VOS1"}, "CPU clock above the maximum"),         # 520 MHz at scale 1
@@ -65,7 +67,7 @@ ROWS = [
     ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_1V8_Supplies_External_LDO_Bypass"}, None),
     ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_2V5_Supplies_External_LDO_Bypass"}, None),
     ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "Bypass"}, None),
-    ("light", {"Supply_Configuration": "Foo"}, "Supply_Configuration"),  # an unknown value must be refused (an unknown *variable* is silently ignored by Alire)
+    ("light", {"Supply_Configuration": "Foo"}, "Supply_Configuration"),  # an unknown value must be refused - by Alire, against the manifest's enumeration (an unknown *variable* is silently ignored by Alire)
     # The flash-size variants (L1): the 128 KB and 512 KB maps must link a small program
     ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "B"}, None),   # the one part with 128 KB
     ("light", {"MCU_Flash_Memory_Size": "E"}, None),
@@ -75,7 +77,7 @@ ROWS = [
     ("embedded", {"Stack_Guard": True, "Stack_Guard_Bytes": 256, "Interrupt_Stack_Size": 2048}, None),
     ("embedded", {"Stack_Guard": True, "Stack_Guard_Bytes": 256, "Interrupt_Stack_Size": 2304}, None),
     ("light-tasking", {"Interrupt_Stack_Size": 1024}, None),
-    ("light", {"Interrupt_Stack_Size": 1024}, "have no"),                                                                # no longer the default: the light crate refuses it
+    ("light", {"Interrupt_Stack_Size": 1024}, "have no effect in the light profile"),                                                                # no longer the default: the light crate refuses it
     # The fault stack (Fault_Stack_Size, 4096 by default): every fault's handling runs on it; embedded refuses
     # less than 2048 (the path measured 1792 bytes); the light crate accepts the option (its faults are routed too)
     ("embedded", {"Fault_Stack_Size": 1024}, "at least 2048 bytes"),
@@ -88,7 +90,7 @@ ROWS = [
     # --- The second review (2026-10): each row seen red before its fix ---
     # The idle task's 2 KB stack (the runtime's own, 8-aligned) bounds the window at 512: a 1 KB window rounded up inside
     # it can leave eight bytes of stack
-    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 1024}, "Stack_Guard_Bytes"),
+    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 1024}, "Stack_Guard_Bytes"),   # refused by Alire against the manifest's last = 512
     ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 512}, None),
     # Parts without a step-down converter refuse the SMPS arrangements (an invalid PWR_CR3 byte is ignored and locks
     # the register until a power cycle, RM0468 6.8.4); the H725/H735 have the converter, the H730 exists both ways
@@ -114,13 +116,22 @@ ROWS = [
     ("light", {"HSE_Bypass": False, "HSE_Clock_Frequency": 50000000, "PLL_M_Div": 5, "PLL_N_Mul": 52}, "crystal"),
     ("light", {"HSE_Bypass": False, "HSE_Clock_Frequency": 48000000, "PLL_M_Div": 6, "PLL_N_Mul": 65}, None),
     # The interrupt stack has a floor of 1 KB: the tick's handler and the scheduler run there
-    ("light-tasking", {"Interrupt_Stack_Size": 64}, "Interrupt_Stack_Size must be at least"),
+    ("light-tasking", {"Interrupt_Stack_Size": 64}, "Interrupt_Stack_Size : Integer range 1024"),   # Z16: the manifest's floor, refused by Alire (the runtime's floor stays behind it)
     ("light-tasking", {"Interrupt_Stack_Size": 1024}, None),
     # A user linker script (LOADER=USER) links with the crate's own scripts named by hand: the three link-time
     # symbols must come from the crate in every loader case
     ("light", {}, None, ["-L{crate}/ld", "-L{crate}/ld/flash-1024", "-L{crate}/ld/ram-h72x", "-Tcommon-ROM.ld",
       "-Wl,--no-warn-rwx-segments"],   # the crate adds this switch for ROM and RAM; a user script adds it itself
      "hello_world", ["-XLOADER=USER"]),
+    # --- The fourth review (2026-10): each row seen red before its fix ---
+    # Z7: the P-output ceilings bind the P output only when it is used; SYSCLK from the crystal with only the Q
+    # output on may run the VCO high at PLL_P_Div = 1 (DIVP1EN = 0): wide range, then medium
+    ("light", {"SYSCLK_Src": "HSE", "PLL_Q_Enable": True, "PLL_N_Mul": 104, "PLL_P_Div": 1}, None),   # P nominally 832 MHz, Q 208
+    ("light", {"SYSCLK_Src": "HSE", "PLL_Q_Enable": True, "PLL_M_Div": 8, "PLL_N_Mul": 400, "PLL_P_Div": 1}, None),   # P nominally 400, Q 100
+    # Z2: an initialised .axisram beyond what the start-up's copy loop can count (upstream's start-rom.S loads the word
+    # count with one movw: 65 535 words, 256 KB) must be refused at the link; below it the program links
+    ("light", {}, "initialised .axisram above 256 KB", [], "big_axisram"),
+    ("light", {}, None, [], "big_axisram_ok"),
 ]
 
 

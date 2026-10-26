@@ -1,0 +1,7 @@
+first pass: PLL2 on from the HSI, then the hand-over
+second pass, after a hand-over with PLL2 running from the HSI
+PLL source is the HSE: TRUE
+PLL2 off: TRUE
+LSE ready: TRUE
+runtime second against the crystal, within 2 %: TRUE
+===TEST COMPLETE===

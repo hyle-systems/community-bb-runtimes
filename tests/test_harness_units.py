@@ -5,6 +5,7 @@ the generator check. Each was written red, before the behaviour it pins existed.
 Run with ``pytest test_harness_units.py`` from ``tests/``; no board, no toolchain needed.
 """
 import pathlib
+import shutil
 import subprocess
 import sys
 
@@ -131,3 +132,51 @@ def test_runner_default_list_carries_every_family_test():
     assert missing == [], f"family testcases absent from the runner's default list: {missing}"
     unknown = sorted(name for name in family if not (TESTS / "testcases" / name).is_dir())
     assert unknown == [], f"names in the runner's family list without a testcase: {unknown}"
+
+
+def _testcase_with_opt(tmp_path, name, opt_source):
+    """A copy of hello_world with the given opt.py (the harness caches opt modules by testcase name: one name per unit)."""
+    tc = tmp_path / name
+    shutil.copytree(HELLO, tc)
+    (tc / "opt.py").write_text(opt_source, encoding="utf-8")
+    return tc
+
+
+def test_values_for_another_crate_share_the_installed_crate(tmp_path):
+    """Z10: upstream's test_rp2040_hal returns crate_config_values for the rp2040_hal crate, not for the runtime; such
+    values must not take the private runtime copy (seen red: every RP2040 row rebuilt its runtime on this branch)."""
+    crate = fake_crate(tmp_path)
+    tc = _testcase_with_opt(tmp_path, "tc_values_of_another_crate",
+                            "def crate_config_values(target_info):\n    return {'rp2040_hal.Use_Startup': False}\n")
+    harness = TestHarness(tc, tmp_path / "wd", TargetInfo(crate, {}))
+    harness.setup()
+    assert not (tmp_path / "wd" / crate.name).exists(), "a private copy was made for another crate's values"
+
+
+def test_values_for_the_runtime_crate_take_a_private_copy(tmp_path):
+    """The complement of the unit above: values for the runtime crate itself do take the copy."""
+    crate = fake_crate(tmp_path)
+    tc = _testcase_with_opt(tmp_path, "tc_values_of_the_runtime",
+                            "def crate_config_values(target_info):\n"
+                            "    return {target_info.runtime_crate_name + '.Time_Base': 'RTC1'}\n")
+    harness = TestHarness(tc, tmp_path / "wd", TargetInfo(crate, {}))
+    harness.setup()
+    assert (tmp_path / "wd" / crate.name).is_dir(), "no private copy for the runtime crate's own values"
+
+
+def test_negative_rows_carry_the_target():
+    """Z17: upstream's Windows per-target job selects with ``-k "not execute_on_target and <target>"``; a negative row
+    whose id carries no target never runs there (seen red: no row did)."""
+    import test_negative_builds as nb
+    without = [nb.row_id(r) for r in nb.ROWS if "stm32h7xx" not in nb.row_id(r)]
+    assert without == [], f"negative rows whose id carries no target ({len(without)}): {without[:3]} ..."
+
+
+def test_io_timeout_hook_default_and_override(tmp_path):
+    """Z14: a testcase may ask for a longer read budget through opt.py (the clock tests wait up to 5 s for a cold LSE
+    against the harness's 5 s default); without the hook the default stands."""
+    crate = fake_crate(tmp_path)
+    plain = TestHarness(HELLO, tmp_path / "wd_plain", TargetInfo(crate, {}))
+    assert plain.io_timeout() == 5.0
+    tc = _testcase_with_opt(tmp_path, "tc_io_timeout", "def io_timeout(target_info):\n    return 12.0\n")
+    assert TestHarness(tc, tmp_path / "wd_hook", TargetInfo(crate, {})).io_timeout() == 12.0

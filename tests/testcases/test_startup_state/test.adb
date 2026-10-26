@@ -33,6 +33,8 @@ begin
    Asm ("mov %0, sp", Outputs => Unsigned_32'Asm_Output ("=r", SP), Volatile => True);
 
    Ada.Text_IO.Put_Line
+     --  BP reads as one on the Cortex-M7 (PM0253 4.3.7: branch prediction
+     --  always on); the line holds the other three bits.
      ("CCR: IC " & Boolean'Image (Bit (CCR, 17)) & " DC " & Boolean'Image (Bit (CCR, 16))
       & " BP " & Boolean'Image (Bit (CCR, 18)) & " STKALIGN " & Boolean'Image (Bit (CCR, 9)));
    Ada.Text_IO.Put_Line

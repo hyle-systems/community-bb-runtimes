@@ -1,0 +1,6 @@
+first pass: regions 3 and 7 enabled over unused SRAM4, then the hand-over
+second pass, after a hand-over with regions 3 and 7 enabled
+MPU on with the guard: TRUE
+regions 3 and 7 cleared by the start-up: TRUE
+the static guards in place (regions 1 and 2): TRUE
+===TEST COMPLETE===

@@ -1,4 +1,4 @@
-TCM_AXI_SHARED = 0
-ITCM initialised: 65536
-AXI SRAM initialised: 327680
+ITCM initialised as the option byte says: TRUE
+AXI SRAM initialised as the option byte says: TRUE
+the two sizes sum to 384 KB: TRUE
 ===TEST COMPLETE===

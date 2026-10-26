@@ -1,0 +1,7 @@
+faulting with the default last-chance handler on the fault stack
+In last chance handler
+Unhandled Ada Exception: PROGRAM_ERROR
+Message: bus fault
+Call stack traceback locations:
+
+restarted after the fault: TRUE
