@@ -1,7 +1,8 @@
---  Two tasks run double-precision chains, switching every millisecond,
---  while the main program pends an FPU-using interrupt a thousand times and
---  runs a chain of its own. Every result must equal the one computed
---  without any switch.
+--  Two tasks run double-precision chains, switching every millisecond with
+--  d8-d15 loaded with patterns across each delay, while the main program
+--  pends an FPU-using interrupt a thousand times and runs a chain of its
+--  own. Every result must equal the one computed without any switch, and
+--  every callee-saved register must come back from every delay unchanged.
 
 with Ada.Real_Time; use Ada.Real_Time;
 with Ada.Synchronous_Task_Control;
@@ -32,6 +33,9 @@ begin
      ("chain A exact: " & Boolean'Image (Chains.Result_A.Value = Chains.Expected_A));
    Ada.Text_IO.Put_Line
      ("chain B exact: " & Boolean'Image (Chains.Result_B.Value = Chains.Expected_B));
+   Ada.Text_IO.Put_Line
+     ("callee-saved FP registers kept across every switch: "
+      & Boolean'Image (Chains.Result_A.Lost = 0 and then Chains.Result_B.Lost = 0));
    Ada.Text_IO.Put_Line
      ("main chain exact: " & Boolean'Image (Main_X = Expected_Main));
    Ada.Text_IO.Put_Line

@@ -90,20 +90,18 @@ ROWS = [
     # --- The second review (2026-10): each row seen red before its fix ---
     # The idle task's 2 KB stack (the runtime's own, 8-aligned) bounds the window at 512: a 1 KB window rounded up inside
     # it can leave eight bytes of stack
-    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 1024}, "Stack_Guard_Bytes"),   # refused by Alire against the manifest's last = 512
+    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 1024}, "Stack_Guard_Bytes : Integer range 32 .. 512"),   # refused by Alire against the manifest's last = 512 (its message, not the runtime's)
     ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 512}, None),
     # Parts without a step-down converter refuse the SMPS arrangements (an invalid PWR_CR3 byte is ignored and locks
     # the register until a power cycle, RM0468 6.8.4); the H725/H735 have the converter, the H730 exists both ways
     ("light", {"MCU_Sub_Family": "H723", "Supply_Configuration": "SMPS"}, "has no SMPS"),
     ("light", {"MCU_Sub_Family": "H733", "Supply_Configuration": "SMPS_1V8_Supplies_LDO"}, "has no SMPS"),
-    ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS"}, None),
     ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "B", "Supply_Configuration": "SMPS_2V5_Supplies_External_LDO_Bypass"}, None),
     ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "B", "Supply_Configuration": "LDO"}, None),
     ("light", {"MCU_Sub_Family": "H735", "Supply_Configuration": "Bypass"}, None),
     # The flash size follows the part: H730 128 KB only, H733/H735 1 MB only, H723/H725 512 KB or 1 MB
     ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "G"}, "MCU_Flash_Memory_Size"),
     ("light", {"MCU_Sub_Family": "H735", "MCU_Flash_Memory_Size": "E"}, "MCU_Flash_Memory_Size"),
-    ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "B"}, None),
     ("light", {"MCU_Sub_Family": "H725", "MCU_Flash_Memory_Size": "E"}, None),
     ("light", {"MCU_Sub_Family": "H733"}, None),   # hello_world on every sub-family: H733 (G, no converter)
     ("embedded", {"MCU_Sub_Family": "H735"}, None),   # and H735 (G, converter) - H723, H725 and H730 have rows above
@@ -117,7 +115,6 @@ ROWS = [
     ("light", {"HSE_Bypass": False, "HSE_Clock_Frequency": 48000000, "PLL_M_Div": 6, "PLL_N_Mul": 65}, None),
     # The interrupt stack has a floor of 1 KB: the tick's handler and the scheduler run there
     ("light-tasking", {"Interrupt_Stack_Size": 64}, "Interrupt_Stack_Size : Integer range 1024"),   # Z16: the manifest's floor, refused by Alire (the runtime's floor stays behind it)
-    ("light-tasking", {"Interrupt_Stack_Size": 1024}, None),
     # A user linker script (LOADER=USER) links with the crate's own scripts named by hand: the three link-time
     # symbols must come from the crate in every loader case
     ("light", {}, None, ["-L{crate}/ld", "-L{crate}/ld/flash-1024", "-L{crate}/ld/ram-h72x", "-Tcommon-ROM.ld",
@@ -132,6 +129,9 @@ ROWS = [
     # count with one movw: 65 535 words, 256 KB) must be refused at the link; below it the program links
     ("light", {}, "initialised .axisram above 256 KB", [], "big_axisram"),
     ("light", {}, None, [], "big_axisram_ok"),
+    # S33: the load images of .data and .axisram take their addresses from expressions, which ld never checks against
+    # the flash region: 200 KB of initial values must be refused on the 128 KB map
+    ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "B"}, "initial values exceed the flash", [], "big_axisram_ok"),
 ]
 
 

@@ -1,5 +1,5 @@
 --  With Stack_Guard = false the runtime must not touch the MPU: control
---  register at its reset value, regions 0 to 2 disabled.
+--  register at its reset value, regions 0 to 3 disabled.
 
 with Ada.Text_IO;
 with Interfaces; use Interfaces;
@@ -16,7 +16,7 @@ procedure Test is
      Address => System'To_Address (16#E000_EDA0#);
 begin
    Ada.Text_IO.Put_Line ("MPU_CTRL =" & Unsigned_32'Image (MPU_CTRL));
-   for Region in Unsigned_32 range 0 .. 2 loop
+   for Region in Unsigned_32 range 0 .. 3 loop
       MPU_RNR := Region;
       Ada.Text_IO.Put_Line
         ("region" & Unsigned_32'Image (Region) & " enabled: "

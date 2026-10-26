@@ -1,5 +1,6 @@
 chain A exact: TRUE
 chain B exact: TRUE
+callee-saved FP registers kept across every switch: TRUE
 main chain exact: TRUE
 handler: served 1000 sum exact TRUE
 ===TEST COMPLETE===

@@ -180,3 +180,50 @@ def test_io_timeout_hook_default_and_override(tmp_path):
     assert plain.io_timeout() == 5.0
     tc = _testcase_with_opt(tmp_path, "tc_io_timeout", "def io_timeout(target_info):\n    return 12.0\n")
     assert TestHarness(tc, tmp_path / "wd_hook", TargetInfo(crate, {})).io_timeout() == 12.0
+
+
+class FakeController:
+    """pygdbmi's controller as the constructor sees it: answers nothing, remembers whether it was told to exit."""
+    instances = []
+
+    def __init__(self, *args, **kwargs):
+        self.exited = False
+        FakeController.instances.append(self)
+
+    def get_gdb_response(self, timeout_sec=None, raise_error_on_timeout=True):
+        return []
+
+    def write(self, *args, **kwargs):
+        return []
+
+    def exit(self):
+        self.exited = True
+
+
+def test_gdb_constructor_failure_shuts_the_debugger_down(monkeypatch, tmp_path):
+    """The GDB interface spawns arm-eabi-gdb in its constructor and the ^error path can raise there; the `with`
+    block's clean-up never runs for a constructor that raised, so the debugger stayed alive holding the ELF
+    (on Windows the temporary directory's removal then fails with a permission error that buries the cause).
+    The constructor must shut the debugger down before letting the exception out."""
+    FakeController.instances.clear()
+    monkeypatch.setattr(target_interface, "find_gdb", lambda crate, prefix: tmp_path / "arm-eabi-gdb")
+    monkeypatch.setattr(target_interface.pygdbmi.gdbcontroller, "GdbController", FakeController)
+
+    def refused(self, timeout_sec=None):
+        raise target_interface.GdbCommandError("GDB command failed: connection refused")
+
+    monkeypatch.setattr(target_interface.GdbTargetInterface, "_wait_for_result", refused)
+    with pytest.raises(target_interface.GdbCommandError):
+        target_interface.GdbTargetInterface(tmp_path, tmp_path / "test", 3333, None)
+    assert FakeController.instances and FakeController.instances[0].exited, "the debugger was left running"
+
+
+def test_unknown_configuration_key_is_refused():
+    """get_config_values merged the crate's declared variables with the overrides by iterating the declared
+    ones, so an override for a name the crate does not declare was dropped and the default built: a misspelt
+    key in a positive row of the negative table would report green for a configuration never compiled."""
+    import support.target_info as target_info
+    declared = {"PLL_N_Mul": {"type": "Integer", "default": 65}}
+    assert target_info.get_config_values(declared, {"PLL_N_Mul": 69}) == {"PLL_N_Mul": 69}
+    with pytest.raises(ValueError):
+        target_info.get_config_values(declared, {"PLL_N_Mull": 69})

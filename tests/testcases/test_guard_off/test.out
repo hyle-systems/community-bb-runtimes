@@ -2,4 +2,5 @@ MPU_CTRL = 0
 region 0 enabled: FALSE
 region 1 enabled: FALSE
 region 2 enabled: FALSE
+region 3 enabled: FALSE
 ===TEST COMPLETE===

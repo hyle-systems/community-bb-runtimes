@@ -37,5 +37,7 @@ begin
    ECC_Probe.Report ("ITCM monitor after sub-word writes", ECC_Probe.D1_ITCM);
    ECC_Probe.Report ("shared AXI/ITCM monitor", ECC_Probe.D1_Shared);
    Probe_Word := 16#5EED_0001#;   -- for the next run to find, unless zeroed
+   ECC_Probe.Clean_Data_Cache (AXI_Last_KB, 32);   -- through to memory: the next start-up's invalidate would
+                                                    -- discard a dirty line, and only Touch's byte would survive
    Ada.Text_IO.Put_Line ("===TEST COMPLETE===");
 end Test;
