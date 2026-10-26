@@ -165,6 +165,11 @@ SECTIONS
      the section would stay zero. Refused here instead. */
   ASSERT (__ccmdata_words < 65536,
           "initialised .axisram above 256 KB: the start-up's copy counts 16 bits (start-rom.S movw)")
+  /* The load images of .data and .axisram take their addresses from the
+     expressions above, which ld never checks against the flash region:
+     an image past the end of the flash linked with exit 0. */
+  ASSERT (__ccmdata_load + (__ccmdata_words << 2) <= ORIGIN(flash) + LENGTH(flash),
+          "initial values exceed the flash: the load images of .data and .axisram run past its end")
 
   .bss (NOLOAD): {
    . = ALIGN(0x8);
@@ -228,7 +233,7 @@ SECTIONS
      SRAM1EN/SRAM2EN for the first two) and writes them whole-word before any
      sub-word use, their ECC being undefined after power-up. They are
      cacheable in the default memory map: a DMA buffer here needs the cache
-     maintenance, or an MPU region of its own (the stack guard uses 0 to 2). */
+     maintenance, or an MPU region of its own (the stack guard uses 0 to 3). */
   .sram12 (NOLOAD) : {
     . = ALIGN(8);
     __sram12_start = .;

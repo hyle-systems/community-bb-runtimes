@@ -45,7 +45,7 @@ def normalised(path: pathlib.Path) -> bytes:
 
 # The family's tasking units live in the two tasking crates only; every other family file is in all three.
 # A file missing from one profile's crate links the sibling family's copy or nothing - this is where it shows.
-TASKING_ONLY = {'s-bbbosu.adb', 'a-intnam.ads', 's-bbcppr.adb'}
+TASKING_ONLY = {'a-intnam.ads', 's-bbcppr.adb', 's-bcpcst.adb'}
 
 
 @pytest.mark.parametrize("src", list(family_sources()), ids=lambda p: "stm32h7xx:" + str(p.relative_to(FAMILY)).replace("\\", "/"))

@@ -174,7 +174,8 @@ procedure Setup_Pll is
       pragma Compile_Time_Error
         (HSE_Used and then not Config.HSE_Bypass
            and then Config.HSE_Clock_Frequency > 48_000_000,
-         "HSE_Clock_Frequency: a crystal is 4 to 48 MHz (RM0468 8.4.1);"
+         "HSE_Clock_Frequency: a crystal is 4 to 48 MHz (RM0468 8.5; the"
+           & " datasheet's Table 33 says 50; the manual's figure is kept);"
            & " up to 50 MHz is for an external clock, with HSE_Bypass");
 
       pragma Compile_Time_Error
@@ -226,9 +227,9 @@ procedure Setup_Pll is
            & " (520 / 400 / 300 / 170 MHz for VOS0 / 1 / 2 / 3, DS13313"
            & " Table 39; D1CPRE does not lift it)");
 
-      --  The Q and R outputs have the same ceiling (Table 39 gives it for
-      --  every PLL1 output); the runtime does not use them, an application
-      --  may.
+      --  The Q and R outputs are held to the same ceiling (Table 39 lists
+      --  the P output; the same figure for Q and R is this crate's choice);
+      --  the runtime does not use them, an application may.
       pragma Compile_Time_Error
         (Activate_PLL
            and ((Config.PLL_Q_Enable and PLL_Q_Freq > CPU_Max)
@@ -260,19 +261,14 @@ procedure Setup_Pll is
          exit when PWR_Periph.CSR1.ACTVOSRDY = 1;
       end loop;
 
-      --  Voltage scaling, then wait until it is the one applied and ready
-
-      PWR_Periph.D3CR.VOS := VOS_Code;
-
-      loop
-         exit when PWR_Periph.CSR1.ACTVOS = VOS_Code
-           and then PWR_Periph.CSR1.ACTVOSRDY = 1;
-      end loop;
-
-      --  Flash latency before the switch, read back as RM0468 4.3.8
-      --  requires: the target's, or what the 64 MHz reset clock still needs
-      --  where that is more (Switch_Latency); the target's then follows the
-      --  switch, at the end.
+      --  Flash latency first, read back as RM0468 4.3.8 requires: the
+      --  target's, or what the 64 MHz reset clock still needs where that is
+      --  more (Switch_Latency). Written before the voltage scaling changes:
+      --  by its definition it is enough for the current clock at the target
+      --  scaling, so it is enough at the present one too, and a scaling
+      --  lowered under a latency a bootloader left at zero never runs the
+      --  flash short (the fourth review, Z5). The target's latency then
+      --  follows the switch, at the end.
 
       declare
          ACR : ACR_Register := Flash_Periph.ACR;
@@ -284,6 +280,15 @@ procedure Setup_Pll is
 
       loop
          exit when Flash_Periph.ACR.LATENCY = Switch_Latency;
+      end loop;
+
+      --  Voltage scaling, then wait until it is the one applied and ready
+
+      PWR_Periph.D3CR.VOS := VOS_Code;
+
+      loop
+         exit when PWR_Periph.CSR1.ACTVOS = VOS_Code
+           and then PWR_Periph.CSR1.ACTVOSRDY = 1;
       end loop;
 
       --  HSI divider: written whatever its value, so that a divider left by
@@ -300,7 +305,7 @@ procedure Setup_Pll is
          exit when RCC_Periph.CR.HSIDIVF = 1;
       end loop;
 
-      --  High-speed external clock, crystal or bypass (RM0468 8.4.1)
+      --  High-speed external clock, crystal or bypass (RM0468 8.5)
 
       if HSE_Used then
          declare
@@ -333,6 +338,15 @@ procedure Setup_Pll is
                                when Config.HSE => 2#10#);
             CKSEL.DIVM1  := Config.PLL_M_Div;
             RCC_Periph.PLLCKSELR := CKSEL;
+
+            --  Read back: a write the hardware ignored (a PLL still
+            --  enabled) would leave another source behind every frequency
+            --  the crate computed; the wait parks here instead, where it
+            --  shows
+            loop
+               exit when RCC_Periph.PLLCKSELR.PLLSRC = CKSEL.PLLSRC
+                 and then RCC_Periph.PLLCKSELR.DIVM1 = CKSEL.DIVM1;
+            end loop;
          end;
 
          declare
@@ -485,22 +499,41 @@ procedure Setup_Pll is
          exit when RCC_Periph.CR.HSIRDY = 1;
       end loop;
 
-      RCC_Periph.CFGR.SW := 2#000#;
+      --  The whole register at its reset value: SW = HSI, and TIMPRE, the
+      --  MCO and RTC prescalers and HRTIMSEL as after reset, whatever a
+      --  bootloader left (the fourth review, Z9)
+
+      RCC_Periph.CFGR := (others => <>);
 
       loop
          exit when RCC_Periph.CFGR.SWS = 2#000#;
       end loop;
 
-      --  Default prescalers, PLL1 off, HSE off, no CSS, no bypass
+      --  Default prescalers, every PLL off, HSE off, no CSS, no bypass
 
       RCC_Periph.D1CFGR := (others => <>);
       RCC_Periph.D2CFGR := (others => <>);
       RCC_Periph.D3CFGR := (others => <>);
 
-      RCC_Periph.CR.PLL1ON := 0;
+      --  Every PLL off, not PLL1 alone: PLLSRC can be written only when all
+      --  PLLs are disabled (RM0468 8.7.10) and HSIDIV cannot change while an
+      --  enabled PLL takes the HSI (8.7.1); a bootloader that left PLL2 or
+      --  PLL3 running would turn both writes into no-ops, silently (the
+      --  fourth review, Z3)
+
+      declare
+         CR : Interfaces.STM32.RCC.CR_Register := RCC_Periph.CR;
+      begin
+         CR.PLL1ON := 0;
+         CR.PLL2ON := 0;
+         CR.PLL3ON := 0;
+         RCC_Periph.CR := CR;
+      end;
 
       loop
-         exit when RCC_Periph.CR.PLL1RDY = 0;
+         exit when RCC_Periph.CR.PLL1RDY = 0
+           and then RCC_Periph.CR.PLL2RDY = 0
+           and then RCC_Periph.CR.PLL3RDY = 0;
       end loop;
 
       declare

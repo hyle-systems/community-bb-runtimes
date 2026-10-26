@@ -867,7 +867,8 @@ class CortexMArch_H7(arm.cortexm.CortexMArch):
     def __init__(self):
         super(CortexMArch_H7, self).__init__()
         # The family's copy of the generic Armv7-M CPU primitives adds the MPU
-        # stack guard and the fault handler of the tasking runtimes; the five
+        # stack guard; the fault trap is handler.S's and the report
+        # System.BB.Faults', in every profile. The five
         # fault vectors of the family's handler.S go to __gnat_fault_trap,
         # which reports through System.BB.Faults in every profile (SVD2Ada's
         # default sends them to `fault: b fault`, a silent loop). The upstream
@@ -881,13 +882,16 @@ class CortexMArch_H7(arm.cortexm.CortexMArch):
 class ArmV7MArch_H7(ArmV7MArch_Patched):
     def __init__(self):
         super(ArmV7MArch_H7, self).__init__()
-        # The family's board support, its own copy of the patched unit.
-        # Registered here so that it replaces the stm32g4_src copy that
-        # ArmV7MArch_Patched installs; without these two lines the crates
-        # ship the G4 file and the family's is dead (tests/test_generated.py
-        # holds the identity of every installed file).
-        self.remove_source("s-bbbosu.adb")
-        self.add_gnarl_sources("stm32h7_src/s-bbbosu.adb")
+        # The board support is the patched unit ArmV7MArch_Patched installs
+        # (the stm32g4_src copy; a copy of this family's own was byte-identical
+        # to it and went). The class stays for its parent override and for the
+        # PendSV copy below.
+        # The family's copy of the PendSV handler, registered at this level
+        # because ArmV7MArch is where the generic unit is added: the guard's
+        # task window is programmed inside the switch, once (the fourth
+        # review, Z1).
+        self.remove_source("s-bcpcst.adb")
+        self.add_gnarl_sources("stm32h7_src/s-bcpcst.adb")
 
     @property
     def parent(self):

@@ -244,10 +244,23 @@ __gnat_sys_tick_trap:
 __gnat_fault_trap:
 	mrs	r0, ipsr
 	ubfx	r0, r0, #0, #9
+	/* The main stack pointer at the fault, kept for the report and for a
+	   debugger: the frame of a fault taken in handler mode lies there,
+	   and the move below would otherwise lose it (the fourth review). */
+	mov	r1, sp
+	ldr	r2, =__gnat_fault_sp
+	str	r1, [r2]
 	ldr	r1, =__fault_stack_end
 	mov	sp, r1
 	b	__gnat_fault_report
 	.size __gnat_fault_trap, . - __gnat_fault_trap
+
+	.section .bss.__gnat_fault_sp,"aw",%nobits
+	.globl __gnat_fault_sp
+	.align 2
+__gnat_fault_sp:
+	.space 4
+	.text
 
 	.thumb_func
 fault:	b fault

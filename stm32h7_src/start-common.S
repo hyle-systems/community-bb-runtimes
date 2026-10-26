@@ -61,17 +61,28 @@ _stm32_start_common:
            - per 6.4.1 - any write to RAM, so it is the first thing after the
            vector table. The upper bits are kept. Then wait until the voltage
            levels are valid (ACTVOSRDY in PWR_CSR1). An arrangement the board is
-           not wired for never becomes valid: the wait is where that shows. */
+           not wired for never becomes valid: the bounded wait below parks at
+           __gnat_supply_not_ready, where that shows. */
         ldr     r0, =0x5802480C         /* PWR_CR3 */
         ldr     r1, [r0]
         bic     r1, r1, #0x3F
         ldr     r2, =__supply_cr3
         orr     r1, r1, r2
         str     r1, [r0]
+        /* Bounded at about 100 ms of the 64 MHz reset clock (the level is
+           specified in microseconds; the HAL bounds the same wait and returns
+           an error): on expiry a park a debugger can name, instead of a spin
+           somewhere in the start-up. A board wired for another arrangement
+           ends here. */
         ldr     r0, =0x58024804         /* PWR_CSR1 */
+        ldr     r3, =0x200000
 1:      ldr     r1, [r0]
         tst     r1, #0x2000             /* ACTVOSRDY */
-        beq     1b
+        bne     4f
+        subs    r3, r3, #1
+        bne     1b
+        b       __gnat_supply_not_ready
+4:
 
         /* The four arrangements in which the converter supplies external
            circuits (SDEXTHP, bit 3 of the byte): wait for SDEXTRDY (PWR_CR3
@@ -82,10 +93,33 @@ _stm32_start_common:
         tst     r2, #0x08               /* SDEXTHP */
         beq     3f
         ldr     r0, =0x5802480C         /* PWR_CR3 */
+        ldr     r3, =0x200000           /* the same bound */
 2:      ldr     r1, [r0]
         tst     r1, #0x10000            /* SDEXTRDY */
-        beq     2b
+        bne     3f
+        subs    r3, r3, #1
+        bne     2b
+        b       __gnat_supply_not_ready
 3:
+        /* The byte is write-once until a power-on reset (RM0468 6.8.4): a
+           different arrangement left locked by a bootloader or by a previous
+           image makes the write above a no-op, and the wait passes on the
+           old arrangement. Compared here; a mismatch parks at a label a
+           debugger can name (the fourth review, Z6). */
+        ldr     r0, =0x5802480C         /* PWR_CR3 */
+        ldr     r1, [r0]
+        and     r1, r1, #0x3F
+        ldr     r2, =__supply_cr3
+        cmp     r1, r2
+        bne     __gnat_supply_mismatch
+
+        /* The fault report's re-entry latch (System.BB.Faults.Reporting) lives
+           in .bss, which is zeroed later, while the fault vectors are already
+           live - and the DTCM keeps it across a warm reset. Cleared here, the
+           first RAM write, now that the supply is valid (the fourth review). */
+        ldr     r0, =__gnat_fault_reporting
+        movs    r1, #0
+        strb    r1, [r0]
 
         /************************
         * Enable debug Monitor *
@@ -137,7 +171,75 @@ _stm32_start_common:
            afterwards. The bounds come from the device's TCM_AXI_SHARED option
            byte (see ecc_init), so every sharing boots with every word valid.
            It runs before the clock set-up, on the 64 MHz reset clock; the
-           time it takes is not measured. */
+           time it takes is not measured. The TCM enables come first (the
+           ITCM is zeroed below; both are on at reset on this part, PM0253
+           4.9, and the order is now the safe one either way). */
+        /*****************************
+         * TCM Memory initialisation *
+        *****************************/
+tcm_init:
+        .set    CM7_ITCMCR, 0xE000EF90
+        .set    CM7_DTCMCR, 0xE000EF94
+
+        ldr     r0, =CM7_ITCMCR
+        ldr     r1, [r0]
+        orr     r1, r1, #0x1 /* set the EN field */
+        str     r1, [r0]
+
+        ldr     r0, =CM7_DTCMCR
+        ldr     r1, [r0]
+        orr     r1, r1, #0x1 /* set the EN field */
+        str     r1, [r0]
+
+        dsb
+        isb
+
+        /* Every line of the data cache through \op - DCISW invalidates,
+           DCCISW cleans and invalidates - set by set and way by way, from
+           CCSIDR's geometry (PM0253 4.8). Clobbers r0 .. r8 and r11. */
+        .macro  dcache_setway op
+        mov     r0, #0x0
+        ldr     r11, =0xE000ED84        /* CSSELR: the data cache */
+        str     r0, [r11]
+        dsb
+        ldr     r11, =0xE000ED80        /* CCSIDR */
+        ldr     r2, [r11]
+        and     r1, r2, #0x7            /* words per line (log2 - 2) */
+        add     r7, r1, #0x4
+        ubfx    r4, r2, #3, #10         /* ways - 1 */
+        ubfx    r2, r2, #13, #15        /* sets - 1 */
+        clz     r6, r4                  /* the way field's offset */
+        ldr     r11, =\op
+1:      mov     r1, r4
+        lsls    r8, r2, r7
+2:      lsls    r3, r1, r6
+        orrs    r3, r3, r8
+        str     r3, [r11]
+        subs    r1, r1, #1
+        bge     2b
+        subs    r2, r2, #1
+        bge     1b
+        dsb
+        .endm
+
+        /* A hand-over with the data cache on (the fourth review, Z4): the
+           zeroing below must reach memory, and the invalidate before the
+           enable (init_cache) would discard dirty lines, so a cache found on
+           is cleaned and invalidated and turned off first. A cold start
+           keeps the invalidate alone: its lines are random and must not be
+           cleaned. */
+        ldr     r11, =0xE000ED14        /* CCR */
+        ldr     r0, [r11]
+        tst     r0, #0x10000            /* DC */
+        beq     ecc_init
+        dcache_setway 0xE000EF74        /* DCCISW */
+        ldr     r11, =0xE000ED14
+        ldr     r0, [r11]
+        bic     r0, r0, #0x10000
+        str     r0, [r11]
+        dsb
+        isb
+
 ecc_init:
         /* The sizes come from the device, not from the map: TCM_AXI_SHARED in
            FLASH_OPTSR2_CUR (RM0468 4.9.24) gives 64, 128, 192 or 256 KB of ITCM
@@ -157,6 +259,21 @@ ecc_init:
         str     r4,[r0]
         ldr     r0,=__ecc_axisram_bytes
         str     r5,[r0]
+        /* The map describes the default sharing: an .axisram, or a RAM-loaded
+           image, that reaches beyond the device's AXI SRAM would bus-fault
+           before main. Compared here against the device's size; a mismatch
+           parks at a label a debugger can name (the fourth review, Z18).
+           __ccmdata_end is weak: a user script may not define it. */
+        .weak   __ccmdata_end
+        movw    r0,#:lower16:__axisram_start
+        movt    r0,#:upper16:__axisram_start
+        adds    r1,r0,r5                /* the device's end of the AXI SRAM */
+        ldr     r0,=__ccmdata_end
+        cmp     r0,r1
+        bhi     __gnat_axisram_mismatch
+        ldr     r0,=__ecc_axisram_zero_start
+        cmp     r0,r1
+        bhi     __gnat_axisram_mismatch
         movs    r2,#0
         movs    r3,#0
         movw    r0,#:lower16:__axisram_start
@@ -191,38 +308,9 @@ init_cache:
         .set    ICIALLU, 0xE000EF50
         .set    CCR,     0xE000ED14
 
-        /* First invalidate the data cache */
-        mov     r0, #0x0
-        ldr     r11, =CSSELR
-        str     r0, [r11]       /* Select the data cache size */
-        dsb
-
-        ldr     r11, =CCSIDR
-        ldr     r2, [r11]       /* Cache size identification */
-        and     r1, r2, #0x7    /* Number of words in a cache line */
-        add     r7, r1, #0x4
-
-        ubfx    r4, r2, #3, #10  /* r4 = number of ways - 1 of data cache */
-        ubfx    r2, r2, #13, #15 /* r2 = number of sets - 1 of data cache */
-        clz     r6, r4           /* Calculate bit offset for "way" in DCISW */
-
-        ldr     r11, =DCISW
-
-inv_loop1:                       /* For each set */
-        mov     r1, r4
-        lsls    r8, r2, r7
-
-inv_loop2:                       /* For each way */
-        lsls    r3, r1, r6
-        orrs    r3, r3, r8
-
-        str     r3, [r11]        /* Invalidate the D-Cache line */
-        subs    r1, r1, #1
-        bge     inv_loop2
-        subs    r2, r2, #1
-        bge     inv_loop1
-
-        dsb
+        /* First invalidate the data cache (a cache found on at entry was
+           cleaned and invalidated before the ECC zeroing, above) */
+        dcache_setway 0xE000EF60        /* DCISW */
 
         /* Now invalidate the instruction cache */
         mov     r0, #0x0
@@ -245,35 +333,16 @@ inv_loop2:                       /* For each way */
         dsb
         isb
 
-        /*****************************
-         * TCM Memory initialisation *
-        *****************************/
-tcm_init:
-        .set    CM7_ITCMCR, 0xE000EF90
-        .set    CM7_DTCMCR, 0xE000EF94
-
-        ldr     r0, =CM7_ITCMCR
-        ldr     r1, [r0]
-        orr     r1, r1, #0x1 /* set the EN field */
-        str     r1, [r0]
-
-        ldr     r0, =CM7_DTCMCR
-        ldr     r1, [r0]
-        orr     r1, r1, #0x1 /* set the EN field */
-        str     r1, [r0]
-
-        dsb
-        isb
-
 guard_init:
         /* Stack_Guard, a crate option of the tasking profiles: the two
            static guards - MPU region 1, a no-access window at the bottom of
-           the interrupt stack, and region 2, the same under the environment
-           stack - programmed here for every program. The tasking runtime's
-           Initialize_CPU programs the same two again and adds each task's
-           as it runs; a light-tasking program with no tasking unit never
-           runs it, and had no guard at all before this block existed.
-           __stack_guard_bytes is the crate's --defsym: the window, 32 .. 1024
+           the interrupt stack where there is one, and region 2, the same
+           under the environment stack - programmed here, once, for every
+           program; the tasking runtime checks that this block ran and adds
+           each task's window as it switches. A light-tasking program with no
+           tasking unit never runs the tasking runtime's initialisation, and
+           had no guard at all before this block existed.
+           __stack_guard_bytes is the crate's --defsym: the window, 32 .. 512
            (a power of two) when the option is on, 8 (an alignment only) when
            it is off, and the block is skipped below 32; the weak reference
            reads 0 under a user linker script that omits it. The values
@@ -284,8 +353,26 @@ guard_init:
         .weak   __stack_guard_bytes
         ldr     r0, =__stack_guard_bytes
         cmp     r0, #32
-        blo     end
-        clz     r1, r0
+        blo     mpu_off
+        /* The MPU off and every region cleared first (PM0253 4.6.9): a
+           bootloader, or a debugger's reload without a reset, may have left
+           regions enabled (the fourth review, Z12). */
+        ldr     r2, =0xE000ED94         /* MPU_CTRL */
+        movs    r3, #0
+        str     r3, [r2]
+        dsb
+        isb
+        ldr     r2, =0xE000ED90         /* MPU_TYPE */
+        ldr     r3, [r2]
+        ubfx    r3, r3, #8, #8          /* DREGION */
+        ldr     r2, =0xE000ED98         /* MPU_RNR; RASR at +8 */
+        movs    r1, #0
+4:      subs    r3, r3, #1
+        blo     5f
+        str     r3, [r2]
+        str     r1, [r2, #8]
+        b       4b
+5:      clz     r1, r0
         rsb     r1, r1, #30             /* SIZE = log2 (bytes) - 1 */
         lsl     r1, r1, #1
         orr     r1, r1, #0x10000000     /* XN */
@@ -316,6 +403,38 @@ guard_init:
         str     r3, [r2]
         dsb
         isb
+        b       end
+
+mpu_off:
+        /* The guard off: the MPU at its reset state, whatever a bootloader
+           left (the fourth review, Z9). */
+        movs    r3, #0
+        ldr     r2, =0xE000ED94         /* MPU_CTRL */
+        str     r3, [r2]
+        dsb
+        isb
+        b       end
+
+        /* Two parking places, named for a debugger: the locked supply byte
+           differs from the crate's (Z6); the map's .axisram exceeds the
+           device's AXI SRAM at its TCM sharing (Z18). */
+        .globl  __gnat_supply_mismatch
+        .type   __gnat_supply_mismatch, %function
+        .thumb_func
+__gnat_supply_mismatch:
+        b       __gnat_supply_mismatch
+        .globl  __gnat_axisram_mismatch
+        .type   __gnat_axisram_mismatch, %function
+        .thumb_func
+__gnat_axisram_mismatch:
+        b       __gnat_axisram_mismatch
+        /* The supply's voltage levels, or the external converter, not ready
+           within the bound: the arrangement is not the board's. */
+        .globl  __gnat_supply_not_ready
+        .type   __gnat_supply_not_ready, %function
+        .thumb_func
+__gnat_supply_not_ready:
+        b       __gnat_supply_not_ready
 
 end:
         bx lr

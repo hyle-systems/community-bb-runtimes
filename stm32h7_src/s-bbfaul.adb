@@ -28,10 +28,16 @@
 
 package body System.BB.Faults is
 
-   Reporting : Boolean := False with Volatile;
+   Reporting : Boolean := False
+     with Volatile, Export, Convention => Asm,
+          External_Name => "__gnat_fault_reporting";
    --  Set by the first report. A fault inside the handling itself - the
    --  last-chance handler faulting, a second overflow - finds it set and
-   --  parks below instead of reporting again without end. Zeroed with .bss
+   --  parks below instead of reporting again without end. Cleared by the
+   --  start-up right after the supply is valid (start-common.S): the fault
+   --  vectors are live before .bss is zeroed, and the DTCM keeps the latch
+   --  across a warm reset, so a fault in that window would otherwise find
+   --  the previous run's latch and park silently. Zeroed with .bss
    --  at start-up, so the first fault after a reset reports; never reset
    --  afterwards, since a fault raised here does not come back to the
    --  program (the handler does not return).

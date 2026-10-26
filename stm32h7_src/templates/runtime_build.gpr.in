@@ -92,21 +92,13 @@ project Runtime_Build is
      "-Wl,--defsym=__supply_cr3=" & Supply_CR3);
 
   case Loader is
-    when "ROM" =>
+    when "ROM" | "RAM" =>
       Linker_Switches := Linker_Switches &
         ("-L" & Runtime_Build'Project_Dir & "/ld_user",
          "-L" & Runtime_Build'Project_Dir & "/ld",
          "-L" & Runtime_Build'Project_Dir & "/ld/flash-" & ROM_Size,
          "-L" & Runtime_Build'Project_Dir & "/ld/ram-" & RAM_Size,
-         "-T" & "common-ROM.ld");
-
-    when "RAM" =>
-      Linker_Switches := Linker_Switches &
-        ("-L" & Runtime_Build'Project_Dir & "/ld_user",
-         "-L" & Runtime_Build'Project_Dir & "/ld",
-         "-L" & Runtime_Build'Project_Dir & "/ld/flash-" & ROM_Size,
-         "-L" & Runtime_Build'Project_Dir & "/ld/ram-" & RAM_Size,
-         "-T" & "common-RAM.ld");
+         "-T" & "common-" & Loader & ".ld");
 
     when "USER" =>
   end case;

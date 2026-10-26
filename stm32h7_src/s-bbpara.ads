@@ -114,7 +114,8 @@ package System.BB.Parameters is
    --  it before the report (handler.S, the linker scripts). In every profile.
 
    --  The three options above act in the tasking runtimes only: the light
-   --  runtime has no interrupt stack, no context switch and no MPU code. A
+   --  runtime has no interrupt stack, no context switch and no MPU code of
+   --  its own (the start-up's guard block is skipped with the option off). A
    --  light crate refuses them rather than accept a guard that guards
    --  nothing (the defaults repeated here are the manifest's).
    pragma Compile_Time_Error
@@ -126,14 +127,16 @@ package System.BB.Parameters is
         & " configuration values");
 
    --  On embedded a fault's handling - the raise in System.BB.Faults.Report,
-   --  the unwinder and the last-chance handler - needs about 1.8 KB of the
-   --  fault stack before the application's handler does anything (1792 bytes
-   --  measured, test_fault_stack_use); the floor leaves a margin above the
-   --  path. Light-tasking's handler is a direct call and needs no floor.
+   --  the unwinder and the last-chance handler - uses 1792 bytes of the
+   --  fault stack with a handler of fixed buffers (test_fault_stack_use)
+   --  and 2048 with one that builds its lines through the secondary stack
+   --  as the default handler does (test_fault_stack_use_alloc, both rounded
+   --  up to 256); the floor holds the latter with half again. Light-
+   --  tasking's handler is a direct call and needs no floor.
    pragma Compile_Time_Error
      (STM32H7xx_Runtime_Profile.Has_Exception_Propagation
-        and then Fault_Stack_Size < 2048,
-      "Fault_Stack_Size on embedded must be at least 2048 bytes: a fault's"
+        and then Fault_Stack_Size < 3072,
+      "Fault_Stack_Size on embedded must be at least 3072 bytes: a fault's"
         & " handling runs on the fault stack");
 
    --  The interrupt stack carries the tick's handler and the scheduler on

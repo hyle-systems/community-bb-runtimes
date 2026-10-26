@@ -123,17 +123,20 @@ package body System.BB.CPU_Primitives is
    --  Stack_Guard_Bytes at each stack's bottom, so the first write past the
    --  bottom of a stack is a precise MemManage fault into the fault trap and
    --  the last-chance handler ("memory management fault") instead of a
-   --  silent walk into whatever lies below. Three regions are used: 0 for
-   --  the running thread, re-programmed before every context switch from
-   --  the next thread's Bottom_Of_Stack, in region 0 or 3 - the two
-   --  alternate, so that the outgoing thread's window stays armed while
-   --  the exception entry and the PendSV handler push onto its stack (up to
-   --  about 200 bytes with the FPU; a single moving region left exactly
-   --  those pushes unguarded); 1 for the interrupt stack; 2 for the
-   --  environment task's stack (its static copy, so the first thread is
-   --  covered before any switch). The stale window left in the other
-   --  region sits at the bottom of a suspended thread's stack, which
-   --  nothing writes until that thread runs again under its own window.
+   --  silent walk into whatever lies below. Four regions are used: 0 and 3
+   --  for the tasks - the PendSV handler programs the incoming thread's
+   --  window (Guard_Switch) in whichever of the two does not hold the
+   --  outgoing thread's, after it has saved the outgoing registers and
+   --  before it loads the incoming ones, so both stacks are guarded
+   --  through the switch; the request (Context_Switch) does not touch
+   --  the MPU, because a switch is requested as many times as interrupts
+   --  find it pending before PendSV runs, and a region that moved on
+   --  every request overwrote the outgoing window on the second one;
+   --  1 for the interrupt stack; 2 for the environment task's stack (its
+   --  static copy, so the first thread is covered before any switch).
+   --  The stale window left in the other task region sits at the bottom
+   --  of a suspended thread's stack, which nothing writes until that
+   --  thread runs again under its own window.
    --  The default memory map stays in force everywhere else (PRIVDEFENA),
    --  so cache attributes are untouched; the MPU is off in HardFault and
    --  NMI handlers (HFNMIENA = 0). A guard costs the interrupt and
@@ -143,7 +146,6 @@ package body System.BB.CPU_Primitives is
 
    Stack_Guard : constant Boolean := System.BB.Parameters.Stack_Guard;
 
-   MPU_TYPE : Word with Volatile, Address => 16#E000_ED90#;
    MPU_CTRL : Word with Volatile, Address => 16#E000_ED94#;
    MPU_RNR  : Word with Volatile, Address => 16#E000_ED98#;
    MPU_RBAR : Word with Volatile, Address => 16#E000_ED9C#;
@@ -183,29 +185,27 @@ package body System.BB.CPU_Primitives is
 
    Region_Thread_A    : constant Word := 0;
    Region_Thread_B    : constant Word := 3;
-   Region_Interrupt   : constant Word := 1;
-   Region_Environment : constant Word := 2;
 
-   Thread_Region : Word := Region_Thread_B;
-   --  The region holding the running thread's window; the next switch
-   --  programs the other one and makes it current.
-
-   Interrupt_Stack_Start : constant Character
-     with Import, Convention => Asm,
-          External_Name => "__interrupt_stack_start";
-   Environment_Stack_Start : constant Character
-     with Import, Convention => Asm,
-          External_Name => "__stack_start";
-   --  Linker symbols: each stack's lowest address is the *address* of the
-   --  imported object (Interrupt_Stack_Start'Address), never its value --
-   --  the first version read the word stored there, i.e. uninitialised
-   --  RAM, and put regions 1 and 2 on an arbitrary window (found by
-   --  review; tests/testcases/test_guard_regions holds the addresses).
+   Region_Holder : array (Boolean) of System.BB.Threads.Thread_Id :=
+     (False => null, True => null);
+   --  Which thread's window each task region holds (False: region A,
+   --  True: region B); null until a switch has used it.
 
    procedure Set_Guard (Region : Word; Stack_Bottom : System.Address);
    pragma Inline (Set_Guard);
    --  Program Region as the no-access window at the lowest Guard_Bytes-aligned
    --  address at or above Stack_Bottom, then make it take effect.
+
+   procedure Guard_Switch
+     (Outgoing, Incoming : System.BB.Threads.Thread_Id);
+   pragma Export (Asm, Guard_Switch, "__gnat_guard_switch");
+   --  Called by the PendSV handler (the family's s-bcpcst) after it has
+   --  saved the outgoing thread's registers and before it loads the
+   --  incoming thread's: the incoming window goes into the task region
+   --  that does not hold the outgoing thread's, so both stacks stay
+   --  guarded through the switch. Idempotent, so a switch requested more
+   --  than once before PendSV runs changes nothing twice; a return when
+   --  Stack_Guard is off.
 
    procedure Set_Selected_Priority_Group;
    --  assign the priority group specified by BB.Parameters
@@ -358,6 +358,7 @@ package body System.BB.CPU_Primitives is
               "movs r1, #2"     & NL &
               "orr r0,r0,r1"    & NL &
               "msr CONTROL,r0"  & NL &
+              "isb"             & NL & -- PM0253 2.1.3: after CONTROL
               "mrs r0, CONTROL",
               Clobber => "r0,r1",
               Volatile => True);
@@ -399,12 +400,14 @@ package body System.BB.CPU_Primitives is
       SHCSR := SHCSR or 16#7_0000#;
 
       if Stack_Guard then
-         --  At least the four regions we use (DREGION, MPU_TYPE bits 15:8)
-         pragma Assert ((MPU_TYPE / 256) mod 256 >= 4);
-         Set_Guard (Region_Interrupt, Interrupt_Stack_Start'Address);
-         Set_Guard (Region_Environment, Environment_Stack_Start'Address);
-         MPU_CTRL := 2#101#;  --  ENABLE and PRIVDEFENA, HFNMIENA clear
-         Asm ("dsb" & NL & "isb", Volatile => True);
+         --  The start-up (start-common.S, guard_init) has cleared every
+         --  region, programmed the two static guards and enabled the MPU,
+         --  for every program; the tasks' windows are this unit's
+         --  (Guard_Switch). One owner for the static part: checked here,
+         --  not done again.
+         if MPU_CTRL /= 2#101# then
+            raise Program_Error with "stack guard not armed by the start-up";
+         end if;
       end if;
 
       --  Call context switch hardware initialization
@@ -441,17 +444,10 @@ package body System.BB.CPU_Primitives is
 
       pragma Assert (PRIMASK = 1);
 
-      if Stack_Guard then
-         --  The thread about to run is First_Thread; PendSV will make it
-         --  Running_Thread. Its guard goes into the other region before the
-         --  switch; the outgoing thread keeps its own until then and after.
-         Thread_Region :=
-           (if Thread_Region = Region_Thread_A then Region_Thread_B
-            else Region_Thread_A);
-         Set_Guard
-           (Thread_Region,
-            System.BB.Threads.Queues.First_Thread.Bottom_Of_Stack);
-      end if;
+      --  The guard's window follows the switch itself: PendSV programs the
+      --  incoming thread's window once it has saved the outgoing one's
+      --  registers (Guard_Switch), which also holds the thread to sizing
+      --  rule 1. Nothing to do for the guard here.
 
       Trigger_Context_Switch;
 
@@ -502,14 +498,47 @@ package body System.BB.CPU_Primitives is
          + (Guard_Bytes - 1)) and not Word'(Guard_Bytes - 1);
    begin
       --  A region previously enabled is disabled before its settings change
-      --  (PM0253 4.6.8); regions 0 and 3 alternate at the context switches, 1
-      --  and 2 are programmed here again after the start-up's guard_init.
+      --  (PM0253 4.6.8); regions 0 and 3 alternate at the context switches
+      --  (Guard_Switch); 1 and 2 are the start-up's.
       MPU_RNR  := Region;
       MPU_RASR := 0;
       MPU_RBAR := Base or 16#10# or Region;  --  VALID: selects the region
       MPU_RASR := Guard_RASR;
       Asm ("dsb" & NL & "isb", Volatile => True);
    end Set_Guard;
+
+   ------------------
+   -- Guard_Switch --
+   ------------------
+
+   procedure Guard_Switch
+     (Outgoing, Incoming : System.BB.Threads.Thread_Id)
+   is
+      use type System.BB.Threads.Thread_Id;
+      use System.Storage_Elements;
+      --  The region that does not hold the outgoing thread's window
+      Use_B : constant Boolean := Region_Holder (False) = Outgoing;
+   begin
+      if Stack_Guard and then Region_Holder (Use_B) /= Incoming then
+         --  Sizing rule 1 at the first switch to a thread: a stack below
+         --  four windows cannot hold its window inside it, and a window
+         --  placed over the neighbour would fault there, not here (the
+         --  fourth review, Z8). Raised in handler mode, the path every
+         --  profile's fault report takes: light-tasking calls the
+         --  last-chance handler at once, embedded's unwinder meets the
+         --  exception return and terminates into it.
+         if To_Integer (Incoming.Top_Of_Stack)
+              - To_Integer (Incoming.Bottom_Of_Stack) < 4 * Guard_Bytes
+         then
+            raise Storage_Error with
+              "task stack below four guard windows";
+         end if;
+         Set_Guard
+           ((if Use_B then Region_Thread_B else Region_Thread_A),
+            Incoming.Bottom_Of_Stack);
+         Region_Holder (Use_B) := Incoming;
+      end if;
+   end Guard_Switch;
 
    ----------------------------------
    -- Interrupt_Request_Handler -- --
@@ -645,11 +674,10 @@ package body System.BB.CPU_Primitives is
    procedure Install_Error_Handlers is
       EH : constant Address := GNAT_Error_Handler'Address;
    begin
-      Install_Trap_Handler (EH, Reset_Vector);
-      Install_Trap_Handler (EH, NMI_Vector);
-      Install_Trap_Handler (EH, Hard_Fault_Vector);
-      Install_Trap_Handler (EH, Bus_Fault_Vector);
-      Install_Trap_Handler (EH, Usage_Fault_Vector);
+      --  The reset and fault vectors are not installed here: handler.S sends
+      --  them to __gnat_fault_trap, which reports through System.BB.Faults
+      --  (the family's routing, in every profile), so an entry in this table
+      --  for them would never be reached.
 
       if Has_OS_Extensions then
          Install_Trap_Handler (EH, Pend_SV_Vector);
