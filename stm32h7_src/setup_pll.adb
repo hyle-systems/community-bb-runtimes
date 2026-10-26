@@ -198,7 +198,7 @@ procedure Setup_Pll is
 
       pragma Compile_Time_Error
         (Activate_PLL and PLL_VCO_Medium
-           and (PLL_P_Freq > PLL_Medium_Out_Max
+           and ((PLL_P_Used and PLL_P_Freq > PLL_Medium_Out_Max)
                 or (Config.PLL_Q_Enable and PLL_Q_Freq > PLL_Medium_Out_Max)
                 or (Config.PLL_R_Enable and PLL_R_Freq > PLL_Medium_Out_Max)),
          "Invalid PLL configuration. In the medium range every PLL1 output"
@@ -217,9 +217,11 @@ procedure Setup_Pll is
       --  The P output has a ceiling of its own, DS13313 Table 39: 550 / 400 /
       --  300 / 170 MHz per voltage scaling (520 at VOS0 here, the CPU's own
       --  maximum, since the boost point is not supported). D1CPRE divides
-      --  the CPU clock after it and does not lift it.
+      --  the CPU clock after it and does not lift it. The ceiling binds the
+      --  output only where it is used (DIVP1EN follows PLL_P_Used): a PLL
+      --  run for its Q or R output alone may leave the nominal P high.
       pragma Compile_Time_Error
-        (Activate_PLL and PLL_P_Freq > CPU_Max,
+        (PLL_P_Used and PLL_P_Freq > CPU_Max,
          "PLL1 P output above the maximum for the selected voltage scaling"
            & " (520 / 400 / 300 / 170 MHz for VOS0 / 1 / 2 / 3, DS13313"
            & " Table 39; D1CPRE does not lift it)");

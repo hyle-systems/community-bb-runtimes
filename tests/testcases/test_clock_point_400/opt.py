@@ -14,3 +14,9 @@ def crate_config_values(target_info):
     # 8 MHz x 50 = 400 MHz at voltage scaling 1; AXI 200, APB 100 (DS13313 Table 12)
     return {f"{target_info.runtime_crate_name}.PLL_N_Mul": 50,
             f"{target_info.runtime_crate_name}.Voltage_Scaling": "VOS1"}
+
+
+def io_timeout(target_info: support.target_info.TargetInfo):
+    # The LSE can take up to 5 s to start after a power cycle (the test waits that long for it), and the
+    # measurement one second more: beyond the harness's 5 s default.
+    return 12.0

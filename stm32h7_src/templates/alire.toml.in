@@ -135,7 +135,9 @@ over it, so size the window to the largest frame of code that is not compiled wi
 `-fstack-check`.
 
 `Interrupt_Stack_Size`, `Stack_Guard` and `Stack_Guard_Bytes` act in the tasking runtimes
-only; the light crate refuses them at compile time if set away from their defaults.
+only; the light crate refuses them at compile time if set away from their defaults. The floors:
+`Interrupt_Stack_Size` 1024 bytes, `Fault_Stack_Size` 512 bytes (2048 on embedded, where the
+fault's handling unwinds on it).
 """
 
 authors = ["AdaCore", "Daniel King", "Hyle Systems S.R.L."]
@@ -179,7 +181,7 @@ D2PPRE2 = { type = "Enum", values = ["DIV1", "DIV2", "DIV4", "DIV8", "DIV16"], d
 D3PPRE = { type = "Enum", values = ["DIV1", "DIV2", "DIV4", "DIV8", "DIV16"], default = "DIV2" }
 
 Supply_Configuration = { type = "Enum", values = ["LDO", "SMPS", "SMPS_1V8_Supplies_LDO", "SMPS_2V5_Supplies_LDO", "SMPS_1V8_Supplies_External_And_LDO", "SMPS_2V5_Supplies_External_And_LDO", "SMPS_1V8_Supplies_External_LDO_Bypass", "SMPS_2V5_Supplies_External_LDO_Bypass", "Bypass"], default = "LDO" }
-Interrupt_Stack_Size = { type = "Integer", first = 1, default = 4096 }
+Interrupt_Stack_Size = { type = "Integer", first = 1024, default = 4096 }
 Fault_Stack_Size = { type = "Integer", first = 512, default = 4096 }
 Stack_Guard = { type = "Boolean", default = false }
 Stack_Guard_Bytes = { type = "Integer", first = 32, last = 512, default = 32 }

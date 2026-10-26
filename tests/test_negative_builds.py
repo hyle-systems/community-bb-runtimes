@@ -136,8 +136,10 @@ ROWS = [
 
 
 def row_id(row):
+    """The id carries the target first, so that upstream's Windows per-target job
+    (``-k "not execute_on_target and stm32h7xx"``) selects the table (Z17)."""
     profile, values, expected = row[:3]
-    return (profile + ":" + (",".join(f"{k}={v}" for k, v in values.items()) or "default")
+    return ("stm32h7xx:" + profile + ":" + (",".join(f"{k}={v}" for k, v in values.items()) or "default")
             + (":" + ",".join(row[3]) if len(row) > 3 and row[3] else "")
             + (":" + row[4] if len(row) > 4 else "") + (":" + " ".join(row[5]) if len(row) > 5 else "")
             + (":builds" if expected is None else ""))

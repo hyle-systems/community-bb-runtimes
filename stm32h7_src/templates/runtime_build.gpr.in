@@ -37,10 +37,7 @@ project Runtime_Build is
       null;
   end case;
 
-  Excluded_Sources := ();
-
   ROM_Size := "1024";
-  RAM_Size := "h72x";
 
   --  Determine the ROM size based on the "flash memory size" part of the
   --  STM32 part number: B = 128 KB (H730), E = 512 KB, G = 1 MB.
@@ -49,7 +46,6 @@ project Runtime_Build is
     when "B"    => ROM_Size := "128";
     when "E"    => ROM_Size := "512";
     when "G"    => ROM_Size := "1024";
-    when others => ROM_Size := "1024";
   end case;
 
   --  The RAM map is the same on every STM32H72x/H73x device: ITCM 64 KB,

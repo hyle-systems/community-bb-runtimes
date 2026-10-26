@@ -95,6 +95,14 @@ FAMILY_TESTCASES = {
         "test_clock_point_st",
         "test_clock_csi",
         "test_ecc_survey",   # skips itself unless ECC_SURVEY=1: meaningful right after a power cycle only
+        # the fourth review's testcases
+        "test_guard_switch_twice",
+        "test_guard_small_task",
+        "test_handover_pll",
+        "test_handover_dcache",
+        "test_handover_state",
+        "test_handover_regions",
+        "test_fault_default_lch",
     ],
 }
 

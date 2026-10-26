@@ -8,3 +8,9 @@ def check_test_conditions(target_info: support.target_info.TargetInfo):
         pytest.skip(f"Test requires target 'stm32h7xx'")
     if not target_info.has_libgnarl:
         pytest.skip(f"Test requires a runtime with libgnarl")
+
+
+def io_timeout(target_info: support.target_info.TargetInfo):
+    # The LSE can take up to 5 s to start after a power cycle (the test waits that long for it), and the
+    # measurement one second more: beyond the harness's 5 s default.
+    return 12.0

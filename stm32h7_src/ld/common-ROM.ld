@@ -159,6 +159,12 @@ SECTIONS
     __ccmdata_end = .;
   } > ccm_da
   __ccmdata_words = (__ccmdata_end - __ccmdata_start) >> 2;
+  /* The start-up's copy of this section (upstream's start-rom.S) loads
+     the word count with a single movw: 65 535 words at most, and a
+     larger count is reduced modulo 65 536 with no error - the tail of
+     the section would stay zero. Refused here instead. */
+  ASSERT (__ccmdata_words < 65536,
+          "initialised .axisram above 256 KB: the start-up's copy counts 16 bits (start-rom.S movw)")
 
   .bss (NOLOAD): {
    . = ALIGN(0x8);

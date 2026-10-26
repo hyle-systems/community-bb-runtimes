@@ -122,6 +122,18 @@ class TestHarness:
 
         return self._opt_module.crate_config_values(self._target_info)
 
+    def io_timeout(self) -> float:
+        """
+        Call io_timeout() in the testcase's opt.py file, if it exists: the
+        seconds the harness waits for the program's output to reach the
+        completion marker (5 by default; a test that waits for a slow
+        oscillator asks for more).
+        """
+        if self._opt_module is None or not hasattr(self._opt_module, "io_timeout"):
+            return 5.0
+
+        return float(self._opt_module.io_timeout(self._target_info))
+
     def build_args(self) -> List[str]:
         """
         Call build_args() in the testcase's opt.py file, if it exists.
@@ -256,8 +268,11 @@ end Test;
         # "must be recompiled" (seen on stm32h7xx, and again for embedded
         # rows of test_negative_builds.py, which ask for the copy through
         # TargetInfo). Every other test, the repository's configuration
-        # rows included, keeps sharing the installed crate.
-        if self.crate_config_values() or self._target_info.private_runtime_crate:
+        # rows included and a testcase that configures another crate (the
+        # RP2040 HAL testcase sets rp2040_hal.*), keeps sharing the
+        # installed crate.
+        own_values = any(k.startswith(runtime_crate_name + ".") for k in self.crate_config_values())
+        if own_values or self._target_info.private_runtime_crate:
             private_crate = self._testcase_working_dir / runtime_crate_dir.name
             shutil.copytree(
                 src=runtime_crate_dir,
