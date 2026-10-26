@@ -15,7 +15,8 @@
 --  bytes above its own window and spins; Waker, of higher priority, wakes
 --  from a delay, which switches the processor to it from the alarm
 --  interrupt: the alarm's exception frame (104 bytes with the FPU) still
---  fits above the window, the PendSV save of r4-r11 and s16-s31 (96 bytes)
+--  fits above the window, the PendSV save of s16-s31 (64 bytes below it;
+--  r4-r11 go to the context buffer, not the stack)
 --  does not, and must be reported at once as a memory management fault.
 --  A runtime that moves its single guard region to Waker before that save
 --  lets the save land in the window silently, runs Waker ("waker ran"), and

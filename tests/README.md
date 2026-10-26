@@ -338,6 +338,7 @@ Testing on STM32 is done on the following boards:
 | `stm32g0xx` | Nucleo-G0B1RE |
 | `stm32g4xx` | Nucleo-G474RE |
 | `stm32f4xx` | STM32 F4VE    |
+| `stm32h7xx` | Nucleo-H723ZG |
 
 The following software is also required to be installed and available on your
 system PATH:
@@ -351,6 +352,25 @@ To run the tests, using the `stm32g0xx` target as an example:
 ```sh
 pytest . --target-board=stm32g0xx --target-if=st-util -k test_execute_on_target
 ```
+
+### Testing the stm32h7xx family
+
+`run_openocd_tests.py` runs the family's testcases one by one, starting and stopping OpenOCD around
+each (the ST-LINK V3 wedges when OpenOCD is killed mid-transaction, so the runner turns the
+target polling off over the telnet port before the kill):
+
+```sh
+cd tests
+python run_openocd_tests.py --target stm32h7xx --profile light-tasking \
+    --openocd /path/to/openocd --working-dir /path/to/work --log-dir /path/to/logs
+```
+
+Without a testcase list it runs the generic testcases and the family's own (`FAMILY_TESTCASES`).
+Three modules need no board: `test_generated.py` (the installed crates carry the family's sources
+byte for byte, the manifests' identity, the memory maps), `test_negative_builds.py` (the
+configurations the crates refuse, each with its message, and the positive controls; about 25 s per
+row with configuration values) and `test_harness_units.py` (checks on the harness itself). The
+family's README, section 7, describes the gate.
 
 ## Writing Tests
 
@@ -382,6 +402,7 @@ can contain some additional, optional functions to configure the test:
 | `compiler_switches` | Returns a list of extra Ada compiler switches for the test program's own units (e.g. `-fstack-check`), not for the runtime. |
 | `linker_switches` | Returns a list of extra linker switches for the test program (e.g. a `--defsym` that sizes the environment stack). |
 | `source_dirs` | Returns a list of additional source directories, relative to the testcase directory (e.g. one last-chance handler per profile). |
+| `io_timeout` | Returns the seconds to wait for the program's output to reach the completion marker (5 by default; a test that waits for a slow oscillator asks for more). |
 
 Here is an example `opt.py` file:
 

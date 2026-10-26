@@ -43,7 +43,7 @@ package body Switch_Probe is
 
    --  One frame per level; the next level is taken only while it would stay
    --  at least 112 bytes above the window, so the deepest frame sits in
-   --  [112, 112 + frame size) and the PendSV save (96 bytes below a 104-byte
+   --  [112, 112 + frame size) and the PendSV save (64 bytes below a 104-byte
    --  exception frame) crosses the window while the frame itself does not.
    procedure Dig (N : Natural; Prev : Integer_Address) with No_Inline;
    procedure Dig (N : Natural; Prev : Integer_Address) is

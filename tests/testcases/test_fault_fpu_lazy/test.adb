@@ -6,10 +6,12 @@
 --  handlers' priority, with the lazily reserved FP area straddling the
 --  window's top (LSPACT set, nothing written yet). The fault's handling must
 --  then be free to use the FPU: the last-chance handler prints a Float.
---  A trap that leaves the lazy state pending lets that first FP instruction
---  save s0-s15 into the no-access window - a fault inside the fault handler,
---  an escalation to hard fault, a second entry into the report, which parks:
---  nothing after "last chance".
+--  The core itself settles the pending lazy state when its area meets the
+--  window: that first FP instruction's save faults (MLSPERR), the core
+--  abandons the save, pends the memory management fault behind the active
+--  handler and completes the instruction - nothing is written into the
+--  window, the report runs on. This test holds that measured behaviour;
+--  the trap adds nothing to it.
 --
 --  The trigger is a device interrupt and not the SysTick alarm: the runtime
 --  places the alarm at the fault handlers' priority, so a stacking fault on

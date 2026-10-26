@@ -218,7 +218,7 @@ SECTIONS
      SRAM1EN/SRAM2EN for the first two) and writes them whole-word before any
      sub-word use, their ECC being undefined after power-up. They are
      cacheable in the default memory map: a DMA buffer here needs the cache
-     maintenance, or an MPU region of its own (the stack guard uses 0 to 2). */
+     maintenance, or an MPU region of its own (the stack guard uses 0 to 3). */
   .sram12 (NOLOAD) : {
     . = ALIGN(8);
     __sram12_start = .;
