@@ -48,7 +48,10 @@ ROWS = [
     ("light", {"PLL_M_Div": 4, "PLL_N_Mul": 100}, None),   # 200 MHz: builds, VCO 200 MHz at the wide range's floor
     # The guard-size option
     ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 100}, "Stack_Guard_Bytes must be"),
-    ("light", {"Stack_Guard": True, "Stack_Guard_Bytes": 100}, "Stack_Guard_Bytes"),  # the option is meaningless in light and must not be accepted silently
+    # The guard's options are meaningless in light and must not be accepted silently: valid values, so that the
+    # light crate's own refusal is what fails the build
+    ("light", {"Stack_Guard": True}, "have no effect in the light profile"),
+    ("light", {"Stack_Guard_Bytes": 256}, "have no effect in the light profile"),
     # Every guarded stack is at least four times the window (the window sits inside the stack at its bottom)
     ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 512, "Interrupt_Stack_Size": 1024}, "four times"),   # a 1 KB interrupt stack against a 512-byte window
     ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 256, "Interrupt_Stack_Size": 1024}, None),   # exactly four times: builds
@@ -67,8 +70,8 @@ ROWS = [
     ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_1V8_Supplies_External_LDO_Bypass"}, None),
     ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_2V5_Supplies_External_LDO_Bypass"}, None),
     ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "Bypass"}, None),
-    ("light", {"Supply_Configuration": "Foo"}, "Supply_Configuration"),  # an unknown value must be refused - by Alire, against the manifest's enumeration (an unknown *variable* is silently ignored by Alire)
-    # The flash-size variants (L1): the 128 KB and 512 KB maps must link a small program
+    ("light", {"Supply_Configuration": "Foo"}, "Supply_Configuration"),  # an unknown value must be refused - by Alire, against the manifest's enumeration
+    # The flash-size variants: the 128 KB and 512 KB maps must link a small program
     ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "B"}, None),   # the one part with 128 KB
     ("light", {"MCU_Flash_Memory_Size": "E"}, None),
     # The interrupt stack: 4096 by default, no floor since a fault's handling moved to the fault stack (the embedded
@@ -86,11 +89,10 @@ ROWS = [
     ("embedded", {"Fault_Stack_Size": 2048}, "at least 3072 bytes"),
     ("embedded", {"Fault_Stack_Size": 3072}, None),
     ("light", {"Fault_Stack_Size": 1024}, None),
-    # L2: a program larger than the 128 KB map (192 KB of constants) fails at the link with a region overflow,
+    # A program larger than the 128 KB map (192 KB of constants) fails at the link with a region overflow,
     # and links against the default map
     ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "B"}, "`flash' overflowed", [], "big_program"),
     ("light", {}, None, [], "big_program"),
-    # --- The second review (2026-10): each row seen red before its fix ---
     # The idle task's 2 KB stack (the runtime's own, 8-aligned) bounds the window at 512: a 1 KB window rounded up inside
     # it can leave eight bytes of stack
     ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 1024}, "Stack_Guard_Bytes : Integer range 32 .. 512"),   # refused by Alire against the manifest's last = 512 (its message, not the runtime's)
@@ -103,8 +105,8 @@ ROWS = [
     ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "B", "Supply_Configuration": "LDO"}, None),
     ("light", {"MCU_Sub_Family": "H735", "Supply_Configuration": "Bypass"}, None),
     # The flash size follows the part: H730 128 KB only, H733/H735 1 MB only, H723/H725 512 KB or 1 MB
-    ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "G"}, "MCU_Flash_Memory_Size"),
-    ("light", {"MCU_Sub_Family": "H735", "MCU_Flash_Memory_Size": "E"}, "MCU_Flash_Memory_Size"),
+    ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "G"}, "does not exist on this part"),
+    ("light", {"MCU_Sub_Family": "H735", "MCU_Flash_Memory_Size": "E"}, "does not exist on this part"),
     ("light", {"MCU_Sub_Family": "H725", "MCU_Flash_Memory_Size": "E"}, None),
     ("light", {"MCU_Sub_Family": "H733"}, None),   # hello_world on every sub-family: H733 (G, no converter)
     ("embedded", {"MCU_Sub_Family": "H735"}, None),   # and H735 (G, converter) - H723, H725 and H730 have rows above
@@ -117,30 +119,38 @@ ROWS = [
     ("light", {"HSE_Bypass": False, "HSE_Clock_Frequency": 50000000, "PLL_M_Div": 5, "PLL_N_Mul": 52}, "crystal"),
     ("light", {"HSE_Bypass": False, "HSE_Clock_Frequency": 48000000, "PLL_M_Div": 6, "PLL_N_Mul": 65}, None),
     # The interrupt stack has a floor of 1 KB: the tick's handler and the scheduler run there
-    ("light-tasking", {"Interrupt_Stack_Size": 64}, "Interrupt_Stack_Size : Integer range 1024"),   # Z16: the manifest's floor, refused by Alire (the runtime's floor stays behind it)
+    ("light-tasking", {"Interrupt_Stack_Size": 64}, "Interrupt_Stack_Size : Integer range 1024"),   # the manifest's floor, refused by Alire (the runtime's floor stays behind it)
     # A user linker script (LOADER=USER) links with the crate's own scripts named by hand: the three link-time
     # symbols must come from the crate in every loader case
     ("light", {}, None, ["-L{crate}/ld", "-L{crate}/ld/flash-1024", "-L{crate}/ld/ram-h72x", "-Tcommon-ROM.ld",
       "-Wl,--no-warn-rwx-segments"],   # the crate adds this switch for ROM and RAM; a user script adds it itself
      "hello_world", ["-XLOADER=USER"]),
-    # --- The fourth review (2026-10): each row seen red before its fix ---
-    # Z7: the P-output ceilings bind the P output only when it is used; SYSCLK from the crystal with only the Q
+    # The P-output ceilings bind the P output only when it is used; SYSCLK from the crystal with only the Q
     # output on may run the VCO high at PLL_P_Div = 1 (DIVP1EN = 0): wide range, then medium
     ("light", {"SYSCLK_Src": "HSE", "PLL_Q_Enable": True, "PLL_N_Mul": 104, "PLL_P_Div": 1}, None),   # P nominally 832 MHz, Q 208
     ("light", {"SYSCLK_Src": "HSE", "PLL_Q_Enable": True, "PLL_M_Div": 8, "PLL_N_Mul": 400, "PLL_P_Div": 1}, None),   # P nominally 400, Q 100
-    # Z2: an initialised .axisram beyond what the start-up's copy loop can count (upstream's start-rom.S loads the word
+    # An initialised .axisram beyond what the start-up's copy loop can count (upstream's start-rom.S loads the word
     # count with one movw: 65 535 words, 256 KB) must be refused at the link; below it the program links
     ("light", {}, "initialised .axisram above 256 KB", [], "big_axisram"),
     ("light", {}, None, [], "big_axisram_ok"),
-    # S33: the load images of .data and .axisram take their addresses from expressions, which ld never checks against
+    # The load images of .data and .axisram take their addresses from expressions, which ld never checks against
     # the flash region: 200 KB of initial values must be refused on the 128 KB map
     ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "B"}, "initial values exceed the flash", [], "big_axisram_ok"),
+    # A zero-only buffer in .axisram_bss takes no flash: 200 KB of it links on the 128 KB map
+    ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "B"}, None, [], "big_axisram_bss"),
+    # The tasking runtimes' 1 ms tick needs a CPU clock of at least 1 MHz: the CSI divided by 512 (7.8 kHz) would
+    # give a 7-cycle tick; the light crate has no tick and accepts it
+    ("light-tasking", {"SYSCLK_Src": "CSI", "D1CPRE": "DIV512"}, "below 1 MHz"),
+    ("light", {"SYSCLK_Src": "CSI", "D1CPRE": "DIV512"}, None),
+    # The PLL input's range checked exactly: 48 000 002 Hz / 3 is 16 000 000.67 Hz, above 16 MHz, though it
+    # truncates to 16 MHz
+    ("light", {"HSE_Clock_Frequency": 48000002, "PLL_M_Div": 3, "PLL_N_Mul": 30}, "between 1 and 16 MHz"),
 ]
 
 
 def row_id(row):
     """The id carries the target first, so that upstream's Windows per-target job
-    (``-k "not execute_on_target and stm32h7xx"``) selects the table (Z17)."""
+    (``-k "not execute_on_target and stm32h7xx"``) selects the table."""
     profile, values, expected = row[:3]
     return ("stm32h7xx:" + profile + ":" + (",".join(f"{k}={v}" for k, v in values.items()) or "default")
             + (":" + ",".join(row[3]) if len(row) > 3 and row[3] else "")

@@ -366,6 +366,9 @@ python run_openocd_tests.py --target stm32h7xx --profile light-tasking \
 ```
 
 Without a testcase list it runs the generic testcases and the family's own (`FAMILY_TESTCASES`).
+A test that takes longer than `--test-timeout` seconds (900 by default) is stopped and counted as
+TIMEOUT; after a failure or a timeout the runner halts the core and logs its state - PC, xPSR, LR,
+the stack pointers, the fault status registers and DHCSR - at the end of the test's pytest log.
 Three modules need no board: `test_generated.py` (the installed crates carry the family's sources
 byte for byte, the manifests' identity, the memory maps), `test_negative_builds.py` (the
 configurations the crates refuse, each with its message, and the positive controls; about 25 s per
@@ -403,6 +406,8 @@ can contain some additional, optional functions to configure the test:
 | `linker_switches` | Returns a list of extra linker switches for the test program (e.g. a `--defsym` that sizes the environment stack). |
 | `source_dirs` | Returns a list of additional source directories, relative to the testcase directory (e.g. one last-chance handler per profile). |
 | `io_timeout` | Returns the seconds to wait for the program's output to reach the completion marker (5 by default; a test that waits for a slow oscillator asks for more). |
+| `unswitched_units` | Returns the units that keep the default compiler switches when `compiler_switches` is defined (`test_lch.adb` by default). |
+| `core_checks` | `run_openocd_tests.py` only: returns what the core's state must be once a passing program's output has been read - a list of (description, `"mem"` or `"reg"`, address or register name, mask, accepted values); the runner halts the core and checks each. |
 
 Here is an example `opt.py` file:
 

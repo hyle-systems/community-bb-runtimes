@@ -19,6 +19,7 @@ The OpenOCD executable is taken from --openocd, else from the OPENOCD environmen
 variable, else from the PATH.
 """
 import argparse
+import importlib.util
 import os
 import pathlib
 import re
@@ -96,7 +97,6 @@ FAMILY_TESTCASES = {
         "test_clock_point_st",
         "test_clock_csi",
         "test_ecc_survey",   # skips itself unless ECC_SURVEY=1: meaningful right after a power cycle only
-        # the fourth review's testcases
         "test_guard_switch_twice",
         "test_guard_small_task",
         "test_handover_pll",
@@ -105,6 +105,16 @@ FAMILY_TESTCASES = {
         "test_handover_regions",
         "test_fault_default_lch",
         "test_fault_stack_use_alloc",
+        "test_guard_rnr",
+        "test_guard_app_region",
+        "test_nmi_hook",
+        "test_fault_nmi",
+        "test_sram_init",
+        "test_clock_point_m3",
+        "test_ceiling_masking",
+        "test_dma_sram12",
+        "test_dma_sram4",
+        "test_clock_cycles",
     ],
 }
 
@@ -180,6 +190,94 @@ def stop_openocd(p, graceful=False, quiesce=True, telnet_port=4444):
     p.wait()
 
 
+def openocd_commands(commands, telnet_port=4444, timeout=5.0):
+    """Send commands to OpenOCD's telnet port, one at a time, and return what it answered (the target
+    halted first by the caller's own "halt" when it needs one). Empty when the port does not answer."""
+    out = []
+    try:
+        with socket.create_connection(("localhost", telnet_port), timeout=timeout) as s:
+            s.settimeout(0.5)
+
+            def drain():
+                data = b""
+                end = time.time() + timeout
+                while time.time() < end:
+                    try:
+                        chunk = s.recv(4096)
+                    except socket.timeout:
+                        if data.rstrip().endswith(b">"):
+                            break
+                        continue
+                    if not chunk:
+                        break
+                    data += chunk
+                    if data.rstrip().endswith(b">"):
+                        break
+                return data.decode(errors="replace")
+
+            drain()   # the banner and prompt
+            for cmd in commands:
+                s.sendall(cmd.encode() + b"\n")
+                out.append(drain())
+    except OSError as e:
+        out.append(f"(telnet: {e})")
+    return out
+
+
+# The core's state after a failure: where it stopped and why (PM0253 4.3.10 - 4.3.14, the debug halting
+# control and status register 0xE000EDF0: S_LOCKUP bit 19)
+DIAGNOSTICS = [
+    "halt",
+    "reg pc",
+    "reg xpsr",
+    "reg lr",
+    "reg msp",
+    "reg psp",
+    "mdw 0xE000ED28 1",   # CFSR
+    "mdw 0xE000ED2C 1",   # HFSR
+    "mdw 0xE000ED34 1",   # MMFAR
+    "mdw 0xE000ED38 1",   # BFAR
+    "mdw 0xE000EDF0 1",   # DHCSR
+]
+
+
+def read_word(answer: str):
+    """The value of an OpenOCD "mdw <addr> 1" answer, or None."""
+    m = re.search(r"0x[0-9a-fA-F]+:\s+([0-9a-fA-F]{8})", answer)
+    return int(m.group(1), 16) if m else None
+
+
+def read_reg(answer: str):
+    """The value of an OpenOCD "reg <name>" answer, or None."""
+    m = re.search(r"\(/32\):\s*0x([0-9a-fA-F]+)", answer)
+    return int(m.group(1), 16) if m else None
+
+
+def load_core_checks(tc: str):
+    """A testcase's opt.py may define core_checks(): what the core's state must be once the program's
+    output has been read - a list of (description, kind, address or register, mask, expected values),
+    kind "mem" or "reg". Checked with the core halted after a passing run."""
+    opt = TESTS_DIR / "testcases" / tc / "opt.py"
+    if not opt.exists():
+        return []
+    spec = importlib.util.spec_from_file_location(f"opt_{tc}", opt)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return list(mod.core_checks()) if hasattr(mod, "core_checks") else []
+
+
+def run_core_checks(checks, telnet_port):
+    """Halt the core and check each item; returns the failures (empty when all hold)."""
+    failures = []
+    answers = openocd_commands(["halt"] + [f"mdw {a:#x} 1" if k == "mem" else f"reg {a}"
+                                           for _, k, a, _, _ in checks], telnet_port)
+    for (desc, kind, _, mask, expected), answer in zip(checks, answers[1:]):
+        value = read_word(answer) if kind == "mem" else read_reg(answer)
+        if value is None or (value & mask) not in expected:
+            failures.append(f"{desc}: read {value if value is None else hex(value)}")
+    return failures
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--target", required=True, choices=TARGET_CFG.keys())
@@ -192,6 +290,8 @@ def main():
     ap.add_argument("--log-dir", default=None, help="where the per-test logs go (default: <working-dir>/openocd-runs)")
     ap.add_argument("--pytest-args", default="",
                     help="extra arguments for pytest, replacing the default \"-q --tb=line\" (e.g. \"-vv --tb=short --keep-build-files\" to see a failing comparison in full)")
+    ap.add_argument("--test-timeout", type=float, default=900.0,
+                    help="seconds one test (build, load, run) may take before it is stopped and counted as TIMEOUT")
     ap.add_argument("testcases", nargs="*", default=None,
                     help="testcases to run (default: the generic list plus the target's own)")
     args = ap.parse_args()
@@ -228,18 +328,40 @@ def main():
         if args.working_dir:
             pytest_cmd.append(f"--working-dir={args.working_dir}")
 
-        r = subprocess.run(pytest_cmd, cwd=TESTS_DIR, capture_output=True, text=True)
-        stop_openocd(p, telnet_port=args.telnet_port)
+        try:
+            r = subprocess.run(pytest_cmd, cwd=TESTS_DIR, capture_output=True, text=True,
+                               timeout=args.test_timeout)
+            out = r.stdout + r.stderr
+            returncode = r.returncode
+        except subprocess.TimeoutExpired as e:
+            out = ((e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")) \
+                + f"\nTIMEOUT after {args.test_timeout:.0f} s\n"
+            returncode = None
 
-        out = r.stdout + r.stderr
-        (log_dir / f"pytest_{tc}_{args.profile}.log").write_text(out, errors="replace")
         summary = out.strip().splitlines()[-1] if out.strip() else ""   # pytest's "=== 1 skipped in 3.2s ==="
-        if r.returncode != 0:
+        if returncode is None:
+            verdict = "TIMEOUT"
+        elif returncode != 0:
             verdict = "FAIL"
         elif re.search(r"\b\d+ skipped\b", summary):
             verdict = "SKIP"
         else:
             verdict = "PASS"
+
+        # A passing run's core checks (opt.py core_checks); after a failure, the core's state for the log
+        if verdict == "PASS":
+            checks = load_core_checks(tc)
+            if checks:
+                failures = run_core_checks(checks, args.telnet_port)
+                out += "\ncore checks: " + ("all hold" if not failures else "; ".join(failures)) + "\n"
+                if failures:
+                    verdict = "FAIL"
+        if verdict in ("FAIL", "TIMEOUT"):
+            answers = openocd_commands(DIAGNOSTICS, args.telnet_port)
+            out += "\n--- the core after the failure ---\n" + "".join(
+                f"> {c}\n{a.strip()}\n" for c, a in zip(DIAGNOSTICS, answers))
+        stop_openocd(p, telnet_port=args.telnet_port)
+        (log_dir / f"pytest_{tc}_{args.profile}.log").write_text(out, errors="replace")
         results.append((tc, verdict))
         print(f"{verdict:5} {tc:28} {time.time() - t0:5.1f} s", flush=True)
 

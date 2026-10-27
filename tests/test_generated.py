@@ -109,3 +109,31 @@ def test_memory_maps_carry_the_parts_sizes(crate_dir: pathlib.Path, script: str)
         assert m, f"{script}: no {region} region"
         assert int(m.group(1), 16) == origin, f"{script}: {region} ORIGIN = {m.group(1)}, expected {origin:#x}"
         assert m.group(2) == length, f"{script}: {region} LENGTH = {m.group(2)}, expected {length}"
+
+# The upstream originals of the family's copies, as the copies were last compared with them: the bb-runtimes
+# submodule at v16.1.0-1 (d7ab8df) and this repository's stm32g4xx scripts. A change to one of them means the
+# family's copy must be compared with the new original and this table updated.
+UPSTREAM_ORIGINALS = {
+    "bb-runtimes/src/s-bbcppr__armv7m.adb":
+        ("stm32h7_src/s-bbcppr.adb", "569b386ca25cc8acdde224258caf55331379def0dd89b140c2a34d77a169b057"),
+    "bb-runtimes/src/s-bcpcst__pendsv.adb":
+        ("stm32h7_src/s-bcpcst.adb", "39cc4cab32808b2c62fe5944b36ca3e201702f82d4fabbdf05908d5c49ef9f87"),
+    "bb-runtimes/arm/stm32/start-common.S":
+        ("stm32h7_src/start-common.S", "ae729f53b777e2db68f7b835fc6be09975ddc3b8544a26c8a1665c2bc66b6468"),
+    "stm32g4_src/ld/common-ROM.ld":
+        ("stm32h7_src/ld/common-ROM.ld", "1bc68e64a78012dc3e1c5425db7ef75270ecbf916b639c661061a8462f3738e7"),
+    "stm32g4_src/ld/common-RAM.ld":
+        ("stm32h7_src/ld/common-RAM.ld", "2e6ba130a2ee56139bc603c417ca2c2106971b2e8ce81a49bea72c6827761dbe"),
+}
+
+
+@pytest.mark.parametrize("original", sorted(UPSTREAM_ORIGINALS))
+def test_upstream_original_unchanged(original):
+    import hashlib
+    path = REPO / original
+    if not path.is_file():
+        pytest.skip(f"{original} not checked out (the bb-runtimes submodule?)")
+    copy, expected = UPSTREAM_ORIGINALS[original]
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    assert digest == expected, (
+        f"{original} changed upstream: compare {copy} with it, then update UPSTREAM_ORIGINALS")

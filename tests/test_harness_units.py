@@ -1,4 +1,4 @@
-"""Board-less checks of the harness itself, from the second review of the stm32h7xx branch: the
+"""Board-less checks of the harness itself: the
 private-runtime-copy rule, the GDB error path, the OpenOCD runner's failed start, the CI's selection of
 the generator check. Each was written red, before the behaviour it pins existed.
 
@@ -143,7 +143,7 @@ def _testcase_with_opt(tmp_path, name, opt_source):
 
 
 def test_values_for_another_crate_share_the_installed_crate(tmp_path):
-    """Z10: upstream's test_rp2040_hal returns crate_config_values for the rp2040_hal crate, not for the runtime; such
+    """Upstream's test_rp2040_hal returns crate_config_values for the rp2040_hal crate, not for the runtime; such
     values must not take the private runtime copy (seen red: every RP2040 row rebuilt its runtime on this branch)."""
     crate = fake_crate(tmp_path)
     tc = _testcase_with_opt(tmp_path, "tc_values_of_another_crate",
@@ -165,7 +165,7 @@ def test_values_for_the_runtime_crate_take_a_private_copy(tmp_path):
 
 
 def test_negative_rows_carry_the_target():
-    """Z17: upstream's Windows per-target job selects with ``-k "not execute_on_target and <target>"``; a negative row
+    """Upstream's Windows per-target job selects with ``-k "not execute_on_target and <target>"``; a negative row
     whose id carries no target never runs there (seen red: no row did)."""
     import test_negative_builds as nb
     without = [nb.row_id(r) for r in nb.ROWS if "stm32h7xx" not in nb.row_id(r)]
@@ -173,7 +173,7 @@ def test_negative_rows_carry_the_target():
 
 
 def test_io_timeout_hook_default_and_override(tmp_path):
-    """Z14: a testcase may ask for a longer read budget through opt.py (the clock tests wait up to 5 s for a cold LSE
+    """A testcase may ask for a longer read budget through opt.py (the clock tests wait up to 5 s for a cold LSE
     against the harness's 5 s default); without the hook the default stands."""
     crate = fake_crate(tmp_path)
     plain = TestHarness(HELLO, tmp_path / "wd_plain", TargetInfo(crate, {}))
@@ -227,3 +227,35 @@ def test_unknown_configuration_key_is_refused():
     assert target_info.get_config_values(declared, {"PLL_N_Mul": 69}) == {"PLL_N_Mul": 69}
     with pytest.raises(ValueError):
         target_info.get_config_values(declared, {"PLL_N_Mull": 69})
+
+def test_runner_reads_openocd_answers():
+    """The runner's core checks and failure log read OpenOCD's answers to "mdw" and "reg"."""
+    assert run_openocd_tests.read_word("mdw 0xE000EDF0 1\r\n0xe000edf0: 01030003 \r\n> ") == 0x01030003
+    assert run_openocd_tests.read_reg("reg xPSR\r\nxPSR (/32): 0x21000004\r\n> ") == 0x21000004
+    assert run_openocd_tests.read_word("> ") is None
+    assert run_openocd_tests.read_reg("Target not halted\r\n> ") is None
+
+
+def test_core_checks_hook():
+    """A testcase without core_checks has none; test_fault_in_fault asks that the core end parked in a fault
+    handler, not locked up - its output alone cannot tell the two apart."""
+    assert run_openocd_tests.load_core_checks("hello_world") == []
+    checks = run_openocd_tests.load_core_checks("test_fault_in_fault")
+    kinds = {(kind, where) for _, kind, where, _, _ in checks}
+    assert ("mem", 0xE000EDF0) in kinds and ("reg", "xpsr") in kinds
+
+
+def test_core_check_verdicts(monkeypatch):
+    """run_core_checks halts first, then compares each answer under its mask."""
+    sent = []
+
+    def fake(commands, telnet_port=4444, timeout=5.0):
+        sent.extend(commands)
+        return ["> ", "0xe000edf0: 00080003 \r\n> ", "xPSR (/32): 0x21000004\r\n> "]
+
+    monkeypatch.setattr(run_openocd_tests, "openocd_commands", fake)
+    checks = [("core not locked up", "mem", 0xE000EDF0, 1 << 19, {0}),
+              ("parked in a fault handler", "reg", "xpsr", 0x1FF, {3, 4, 5, 6})]
+    failures = run_openocd_tests.run_core_checks(checks, 4444)
+    assert sent[0] == "halt"
+    assert len(failures) == 1 and failures[0].startswith("core not locked up")
