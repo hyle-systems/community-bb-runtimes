@@ -53,6 +53,16 @@ package System.BB.Parameters is
    Clock_Frequency  : constant := Board_Parameters.Main_Clock_Frequency;
    Ticks_Per_Second : constant := Board_Parameters.Main_Clock_Frequency;
 
+   --  The tasking runtimes take a SysTick interrupt every millisecond, of a
+   --  few hundred processor cycles: below 1 MHz the tick would take most
+   --  of the processor or all of it (a CSI divided by 512 gives a 7-cycle
+   --  tick). A light crate has no tick.
+   pragma Compile_Time_Error
+     (STM32H7xx_Runtime_Profile.Has_Tasking
+        and then Clock_Frequency < 1_000_000,
+      "The CPU clock is below 1 MHz: the tasking runtimes' 1 ms tick would"
+        & " take the processor (raise the clock or lower D1CPRE)");
+
    ----------------
    -- Interrupts --
    ----------------

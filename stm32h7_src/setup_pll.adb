@@ -140,9 +140,9 @@ procedure Setup_Pll is
    --  00 = 1..2 MHz, 01 = 2..4 MHz, 10 = 4..8 MHz, 11 = 8..16 MHz
 
    PLL_RGE : constant :=
-     (if    PLL_IN_Freq < 2_000_000 then 2#00#
-      elsif PLL_IN_Freq <= 4_000_000 then 2#01#
-      elsif PLL_IN_Freq <= 8_000_000 then 2#10#
+     (if    PLL_Src_Freq < 2_000_000 * Config.PLL_M_Div then 2#00#
+      elsif PLL_Src_Freq <= 4_000_000 * Config.PLL_M_Div then 2#01#
+      elsif PLL_Src_Freq <= 8_000_000 * Config.PLL_M_Div then 2#10#
       else 2#11#);
 
    --  The PLL1 input selects the VCO range (DS13313 6.3.11): an input of
@@ -155,7 +155,8 @@ procedure Setup_Pll is
    --  the wide VCO with the 2 .. 4 MHz input code, and so does this
    --  runtime: the medium range below 2 MHz only.
 
-   PLL_VCO_Medium : constant Boolean := PLL_IN_Freq < 2_000_000;
+   PLL_VCO_Medium : constant Boolean :=
+     PLL_Src_Freq < 2_000_000 * Config.PLL_M_Div;
 
    PLL_Medium_Out_Max : constant :=
      (if Config.Voltage_Scaling = Config.VOS3 then 200_000_000
@@ -204,7 +205,9 @@ procedure Setup_Pll is
            & " up to 50 MHz is for an external clock, with HSE_Bypass");
 
       pragma Compile_Time_Error
-        (Activate_PLL and PLL_IN_Freq not in PLL_Input_Range,
+        (Activate_PLL
+           and (PLL_Src_Freq < 1_000_000 * Config.PLL_M_Div
+                or PLL_Src_Freq > 16_000_000 * Config.PLL_M_Div),
          "Invalid PLL configuration. PLL1 input frequency after the /M"
            & " divider must be between 1 and 16 MHz");
 
@@ -618,8 +621,7 @@ procedure Setup_Pll is
       --  Every PLL off, not PLL1 alone: PLLSRC can be written only when all
       --  PLLs are disabled (RM0468 8.7.10) and HSIDIV cannot change while an
       --  enabled PLL takes the HSI (8.7.1); a bootloader that left PLL2 or
-      --  PLL3 running would turn both writes into no-ops, silently (the
-      --  fourth review, Z3)
+      --  PLL3 running would turn both writes into no-ops, silently
 
       declare
          CR : Interfaces.STM32.RCC.CR_Register := RCC_Periph.CR;

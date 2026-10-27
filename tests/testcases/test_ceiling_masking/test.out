@@ -1,0 +1,3 @@
+inside the action: the interrupt above the ceiling ran TRUE, the one at the ceiling waited TRUE, the one below waited TRUE
+after the action: each ran once TRUE
+===TEST COMPLETE===

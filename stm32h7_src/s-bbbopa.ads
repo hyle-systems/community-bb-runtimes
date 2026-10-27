@@ -79,16 +79,31 @@ package System.BB.Board_Parameters is
    type PLL_VCO_Wide_Range   is range 192_000_000 .. 836_000_000;
    type PLL_VCO_Medium_Range is range 150_000_000 .. 420_000_000;
 
-   PLL_IN_Freq : constant :=
+   PLL_Src_Freq : constant :=
      (case Config.PLL_Src is
         when Config.HSE => HSE_Freq,
-        when Config.HSI => HSI_Freq) / Config.PLL_M_Div;
+        when Config.HSI => HSI_Freq);
 
-   PLL_VCO_Freq : constant := PLL_IN_Freq * Config.PLL_N_Mul;
+   --  The input after M, for its range only: the limits are checked
+   --  exactly against PLL_Src_Freq and M (setup_pll.adb), and the outputs
+   --  are computed from the source with one division each, so that an M
+   --  that does not divide the source does not truncate the input before
+   --  N multiplies it (25 MHz / 3 x 60 is 500 MHz, not 499 999 980 Hz -
+   --  the runtime's clock would gain 3.5 ms a day).
+   PLL_IN_Freq : constant := PLL_Src_Freq / Config.PLL_M_Div;
 
-   PLL_P_Freq : constant := PLL_VCO_Freq / Config.PLL_P_Div;
-   PLL_Q_Freq : constant := PLL_VCO_Freq / Config.PLL_Q_Div;
-   PLL_R_Freq : constant := PLL_VCO_Freq / Config.PLL_R_Div;
+   PLL_VCO_Freq : constant :=
+     PLL_Src_Freq * Config.PLL_N_Mul / Config.PLL_M_Div;
+
+   PLL_P_Freq : constant :=
+     PLL_Src_Freq * Config.PLL_N_Mul
+       / (Config.PLL_M_Div * Config.PLL_P_Div);
+   PLL_Q_Freq : constant :=
+     PLL_Src_Freq * Config.PLL_N_Mul
+       / (Config.PLL_M_Div * Config.PLL_Q_Div);
+   PLL_R_Freq : constant :=
+     PLL_Src_Freq * Config.PLL_N_Mul
+       / (Config.PLL_M_Div * Config.PLL_R_Div);
 
    ------------------
    -- System clock --
