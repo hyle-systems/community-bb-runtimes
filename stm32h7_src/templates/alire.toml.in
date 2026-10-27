@@ -1,5 +1,5 @@
 name = "$(profile_underscored)_$(target)"
-description = "$(profile) runtime for the $(pretty_target) SoC"
+description = "$(profile) runtime for the STM32H72x/H73x line (RM0468)"
 version = "$(version)"
 
 long-description = """
@@ -30,8 +30,9 @@ $(project_file_withs)
    end Linker;
    ```
 
-The runtime is configurable via Alire crate configuration variables.
-See the project website for full details of the available options.
+The runtime is configurable via Alire crate configuration variables; the
+family's README in the repository (`stm32h7_src/README.md`) describes each one,
+the memory map, the fault handling and the tests behind every claim.
 
 By default, the runtime is configured for the STM32H723ZG on the NUCLEO-H723ZG
 board: an 8 MHz external clock on the HSE input (from the on-board ST-LINK, so
@@ -51,95 +52,59 @@ $(profile_underscored)_$(target).PLL_N_Mul             = 104
 $(profile_underscored)_$(target).PLL_P_Div             = 1
 ```
 
-The runtime generates a compile-time error when the configuration breaks a
-limit of the chip: the PLL1 input (1 .. 16 MHz after the M divider), the VCO
-(192 .. 836 MHz wide, 150 .. 420 MHz medium), an odd P divider other than 1,
-or the CPU, AXI/AHB and APB maxima of the selected voltage scaling
-(520 / 275 / 137.5 MHz at VOS0). The flash wait states follow RM0468 Table 16.
+The runtime refuses at compile time a configuration that breaks a limit of the
+chip: the PLL1 input (1 .. 16 MHz after the M divider), the VCO (192 .. 836 MHz
+wide, 150 .. 420 MHz medium), an odd P divider other than 1, the CPU, AXI/AHB
+and APB maxima of the selected voltage scaling (520 / 275 / 137.5 MHz at VOS0),
+a CPU clock below 1 MHz on the tasking runtimes. The flash wait states follow
+RM0468 Table 16. VOS0 limits the junction temperature to 105 C (DS13313
+Table 13). The runtime sets up the supply, the voltage scaling, PLL1 and the
+domain prescalers only: PLL2, PLL3 and every peripheral kernel clock (the FDCAN
+kernel clock is the HSE after reset) are the application's.
 
-The fault stack is 4 KB by default (`Fault_Stack_Size`, bytes, in every profile); the tasking
-crates' interrupt stack too (`Interrupt_Stack_Size`, which the light crate refuses):
-```toml
-[configuration.values]
-$(profile_underscored)_$(target).Fault_Stack_Size = 8192
-```
-Every fault - NMI, hard, memory management, bus, usage - is handled on the fault stack: the fault
-trap switches to it before the report, so a fault's handling never runs on the stack that overflowed
-and never walks below it. On embedded that handling - the raise in `System.BB.Faults.Report`, the
-unwinder and the last-chance handler - needs about 1.8 KB before the application's handler does
-anything (1792 bytes measured with gnat_arm_elf 16.1.0, the testcase `test_fault_stack_use`); the
-embedded crate refuses a fault stack below 3072 bytes at compile time (the path alone needs 1.8 KB, a handler that
-allocates as the default one does 2 KB). An overflow of the interrupt
-stack into its guard window is reported as a memory management fault like any other (before the
-fault stack, the handler's own first push into the window escalated it to a hard fault reported from
-below the stack). A fault inside the handling itself parks the report instead of repeating it. Size
-the interrupt stack for the deepest nesting and the guard window.
-
-`Supply_Configuration` is the board's core-supply arrangement, RM0468 Table 30: `LDO` (row 1, the
-default: the NUCLEO-H723ZG and every part without the SMPS step-down converter), `SMPS` (row 2, the
-core from the converter, LDO bypassed), `SMPS_1V8_Supplies_LDO` / `SMPS_2V5_Supplies_LDO` (row 3),
-`SMPS_1V8_Supplies_External_And_LDO` / `SMPS_2V5_Supplies_External_And_LDO` (row 4),
-`SMPS_1V8_Supplies_External_LDO_Bypass` / `SMPS_2V5_Supplies_External_LDO_Bypass` (row 5), `Bypass`
-(row 6). The converter exists on the STM32H725 and STM32H735 and on the STM32H730 variants with the Q
-suffix; the STM32H723 and STM32H733 have none, and the crate refuses the SMPS arrangements for them
-(an invalid byte would lock the register until a power cycle). `Bypass`, an external supply with
-the LDO off, exists on every part. At VOS0, the default, a converter that feeds the LDO must output
-2.5 V (DS13311 Table 14): the crate refuses `SMPS_1V8_Supplies_LDO` and
-`SMPS_1V8_Supplies_External_And_LDO` there and accepts them from VOS1 down; the scaling itself is
-reachable from every source on this family, the direct converter and bypass included. The start-up
-writes the arrangement once into PWR_CR3, before anything touches RAM, and waits for the voltage
-levels to be
-valid. The register is write-once until a power-on reset: a changed value takes effect after a power
-cycle, and an arrangement the board is not wired for leaves the core unsupplied until one. Read the
+`Supply_Configuration` is the board's core-supply arrangement, RM0468 Table 30:
+`LDO` (the default: the NUCLEO-H723ZG and every part without the SMPS
+step-down converter), `SMPS`, `SMPS_1V8_Supplies_LDO`, `SMPS_2V5_Supplies_LDO`,
+`SMPS_1V8_Supplies_External_And_LDO`, `SMPS_2V5_Supplies_External_And_LDO`,
+`SMPS_1V8_Supplies_External_LDO_Bypass`, `SMPS_2V5_Supplies_External_LDO_Bypass`,
+`Bypass`. The register is write-once until a power-on reset, and an arrangement
+the board is not wired for leaves the core unsupplied until one: read the
 board's schematic before changing it.
 
-The runtime's data, stacks and heap live in the DTCM; the `.axisram` section is the AXI SRAM. At
-start-up the ECC of the AXI SRAM and of the ITCM is initialised word by word, for exactly the sizes
-the device's `TCM_AXI_SHARED` option byte gives (64 KB ITCM / 320 KB AXI SRAM by default; 128/256,
-192/192 or 256/128 otherwise), so sub-word writes anywhere in them raise no RAMECC flag; the DTCM
-needs none (measured); SRAM1, SRAM2 and SRAM4 are the application's to write whole-word before any
-sub-word use. The linker scripts describe the default sharing: a device set otherwise has less AXI
-SRAM than they declare. **A DMA cannot reach the DTCM**, so a DMA buffer goes in `.axisram` or in
-the two sections for the RAMs made for it, `.sram12` (SRAM1 and SRAM2, D2) and `.sram4` (SRAM4, D3;
-the only one the BDMA reaches),
-through `Linker_Section`; those two carry no initial values, the application enables their clocks
-(`RCC_AHB2ENR` for SRAM1/2) and writes them whole-word first. All three are cacheable in the default
-memory map: clean the cache before a DMA reads a buffer, keep the buffer's lines clean or invalid
-while a DMA writes it, invalidate after the DMA has written, with the barriers of errata ES0491 2.1.4, or give the buffer an MPU region of its own (the stack
-guard uses regions 0 to 3; applications start at 4). Text buffers for semihosting output are read by the host behind the
-cache as well; the runtime's own live in the DTCM.
+Memory: the runtime's data, stacks and heap live in the DTCM, which DMA1,
+DMA2 and the BDMA cannot reach. A DMA buffer goes, through `Linker_Section`, in
+`.axisram` (AXI SRAM, initial values copied at start-up) or `.axisram_bss`
+(zero, not stored in the flash), `.sram12` (SRAM1/SRAM2) or `.sram4` (SRAM4,
+the BDMA's), whose initial values the start-up copies too, or their `_noinit`
+variants, which it leaves untouched. All of them are cacheable: align a DMA
+buffer to 32 bytes, size it in multiples of 32, and clean or invalidate the
+cache around transfers (errata ES0491 2.1.4: a barrier after the maintenance),
+or give it an MPU region of its own.
 
-`Stack_Guard = true` makes the runtime keep an MPU no-access window of `Stack_Guard_Bytes` at the
-bottom of every stack (each task's, the environment task's and the interrupt stack),
-re-programmed at each context switch, so that the first write past a stack's bottom is a
-memory-management fault reported through the last-chance handler instead of a silent
-corruption of the memory below. The window sits inside the stack at its bottom: the interrupt
-and environment stacks, which the linker aligns to the window, lose exactly one window; a task's
-stack, aligned by the compiler to 8, loses between one and two. **Every guarded stack must be at
-least four times `Stack_Guard_Bytes`**: the runtime checks the interrupt stack at compile time and
-the environment stack at link time ("environment stack smaller than four guard windows", a
-linker assertion against `__stack_size`); a task's `Storage_Size` is the application's, which can state the rule next
-to each task:
+Faults: NMI, hard, memory-management, bus and usage faults are reported as
+Ada exceptions into the last-chance handler, on a fault stack of their own
+(`Fault_Stack_Size`, 4096 bytes by default; at least 3072 on embedded). The
+NMI is the weak name `__gnat_nmi_trap`, which an application may define.
+
+`Stack_Guard = true` (tasking runtimes) keeps an MPU no-access window of
+`Stack_Guard_Bytes` (32 .. 512, a power of two) at the bottom of every stack,
+so that the first write past a stack's bottom is a memory-management fault. It
+uses MPU regions 12 to 15; an application uses 0 to 11. Every guarded stack
+must be at least four windows: the runtime checks the interrupt stack at
+compile time, the environment stack at link time and a task's at its first
+switch; a task's `Storage_Size` is the application's:
 ```ada
 pragma Compile_Time_Error
   (Light_Tasking_Stm32h7xx_Config.Stack_Guard
      and then My_Task_Stack_Size < 4 * Light_Tasking_Stm32h7xx_Config.Stack_Guard_Bytes,
    "My_Task's stack is smaller than four guard windows");
 ```
-The two static guards - the environment stack's, and the interrupt stack's where one exists - are
-programmed by the start-up for every program, tasking or not; the running task's follows once the tasking runtime is
-up (a program without a tasking unit has only the environment stack, and it is guarded). The guard uses MPU regions 0 to 3 (the running task's window alternates between 0 and 3, so the outgoing task's stays armed through a context switch); applications using the MPU themselves should start at region 4. Off
-by default. `Stack_Guard_Bytes` sets the window: 32 (the default), 64, 128, 256 or 512 (the runtime's idle
-task has a 2 KB stack of its own, which holds four of the largest);
-a frame whose first write lands more than the window below the previous stack pointer steps
-over it, so size the window to the largest frame of code that is not compiled with
-`-fstack-check`.
+Size the window to the largest frame of code not compiled with `-fstack-check`.
 
-`Interrupt_Stack_Size`, `Stack_Guard` and `Stack_Guard_Bytes` act in the tasking runtimes
-only; the light crate refuses them at compile time if set away from their defaults (so
-`light_tasking_$(target).Interrupt_Stack_Size = 8192` belongs in a tasking crate's values). The floors:
-`Interrupt_Stack_Size` 1024 bytes, `Fault_Stack_Size` 512 bytes (3072 on embedded, where the
-fault's handling unwinds on it).
+`Interrupt_Stack_Size` (4096 bytes by default, at least 1024), `Stack_Guard`
+and `Stack_Guard_Bytes` act in the tasking runtimes only; the light crate
+refuses them if set away from their defaults. The environment stack is set at
+link time with `-Wl,--defsym=__stack_size=<bytes>` (4096 by default).
 """
 
 authors = ["AdaCore", "Daniel King", "Hyle Systems S.R.L."]

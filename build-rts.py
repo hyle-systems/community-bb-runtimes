@@ -867,12 +867,10 @@ class CortexMArch_H7(arm.cortexm.CortexMArch):
     def __init__(self):
         super(CortexMArch_H7, self).__init__()
         # The family's copy of the generic Armv7-M CPU primitives adds the MPU
-        # stack guard; the fault trap is handler.S's and the report
-        # System.BB.Faults', in every profile. The five
-        # fault vectors of the family's handler.S go to __gnat_fault_trap,
-        # which reports through System.BB.Faults in every profile (SVD2Ada's
-        # default sends them to `fault: b fault`, a silent loop). The upstream
-        # unit is otherwise unchanged; a candidate for bb-runtimes itself.
+        # stack guard. (The fault vectors of the family's handler.S go to its
+        # own trap, which reports through System.BB.Faults in every profile;
+        # SVD2Ada's default sends them to `fault: b fault`, a silent loop.)
+        # The upstream unit is otherwise unchanged.
         # Done at this level because CortexMArch is where the generic unit is
         # registered (compare the s-bbbosu.adb precedent, one level down).
         self.remove_source("s-bbcppr.adb")
@@ -888,8 +886,9 @@ class ArmV7MArch_H7(ArmV7MArch_Patched):
         # PendSV copy below.
         # The family's copy of the PendSV handler, registered at this level
         # because ArmV7MArch is where the generic unit is added: the guard's
-        # task window is programmed inside the switch, once (the fourth
-        # review, Z1).
+        # task window is programmed inside the switch, once per switch, so a
+        # switch requested twice before it runs cannot move the outgoing
+        # task's window.
         self.remove_source("s-bcpcst.adb")
         self.add_gnarl_sources("stm32h7_src/s-bcpcst.adb")
 

@@ -5,6 +5,8 @@
 pragma Style_Checks (Off);
 
 --  This spec has been automatically generated from STM32H723.svd
+--  (version 1.7, Keil STM32H7xx_DFP 4.1.3), then edited by hand: interrupt
+--  27 named TIM1_CC_Interrupt (TIM_CC in the SVD)
 
 --  This is a version for the STM32H723 MCU
 package Ada.Interrupts.Names is

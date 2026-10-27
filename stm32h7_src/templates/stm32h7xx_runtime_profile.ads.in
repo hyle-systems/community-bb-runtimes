@@ -8,7 +8,6 @@ pragma Style_Checks (Off);
 package STM32H7xx_Runtime_Profile is
    pragma Pure;
 
-   Name        : constant String  := "$(profile)";
    Has_Tasking : constant Boolean := $(has_tasking);
    --  Embedded propagates exceptions: a fault's handling unwinds on the
    --  fault stack, which has a floor there (System.BB.Parameters).

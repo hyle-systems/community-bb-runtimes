@@ -5,6 +5,7 @@
 pragma Style_Checks (Off);
 
 --  This spec has been automatically generated from STM32H723.svd
+--  (version 1.7, Keil STM32H7xx_DFP 4.1.3)
 
 
 with System;
