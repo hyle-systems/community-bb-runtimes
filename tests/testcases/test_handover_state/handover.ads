@@ -2,7 +2,7 @@
 --  start-up must not assume away, disables interrupts, sets the main stack
 --  pointer and branches to the reset entry (_start_rom) - no reset, so
 --  every register and every RAM keep what the program left. A word in
---  SRAM4, which the start-up never zeroes (the section is NOLOAD) and a
+--  SRAM4, which the start-up neither loads nor zeroes (.sram4_noinit) and a
 --  system reset keeps, marks the second pass; the second pass clears it, so
 --  the next run starts afresh. A mark alone is not enough: a run that
 --  dies after marking (the start-up hanging on the prepared state, which
@@ -29,8 +29,12 @@ package Handover is
    --  Writes the data-cache line holding Addr back to memory (DCCMVAC)
 
    procedure Restart with No_Return;
-   --  Interrupts off, the tick stopped, every interrupt disabled and
-   --  unpended, the main stack pointer at its top, CONTROL and BASEPRI at
-   --  their reset values, then the branch to _start_rom
+   --  The branch to _start_rom the way a careless bootloader takes it: the
+   --  tick running with its interrupt enabled and pending, a peripheral
+   --  interrupt (TIM2, IRQ 28) enabled and pending, BASEPRI raised, lazy
+   --  floating-point stacking off (FPCCR ASPEN and LSPEN clear), the thread
+   --  on the process stack (CONTROL.SPSEL) at an address in the AXI SRAM,
+   --  interrupts enabled. The start-up must clear what would interrupt it
+   --  or the runtime and re-establish what the runtime assumes.
 
 end Handover;

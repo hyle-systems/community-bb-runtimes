@@ -1,8 +1,8 @@
---  Z12 of the fourth review (PM0253 4.6.9: disable the unused regions before
+--  (PM0253 4.6.9: disable the unused regions before
 --  enabling the MPU, in case it was programmed before): regions a bootloader
 --  - or a debugger's reload without a reset - left enabled must be cleared
 --  by the start-up's guard programming; only the two static guards remain.
---  No tasking unit here, so no context switch programs regions 0 or 3.
+--  No tasking unit here, so no context switch programs regions 12 or 15.
 
 with Ada.Text_IO;
 with Interfaces; use Interfaces;
@@ -27,11 +27,11 @@ begin
       Ada.Text_IO.Put_Line ("MPU on with the guard: " & Boolean'Image (MPU_CTRL = 5));
       Ada.Text_IO.Put_Line ("regions 3 and 7 cleared by the start-up: "
                             & Boolean'Image (not Enabled (3) and then not Enabled (7)));
-      --  Region 1 is not programmed here: a program without a tasking unit
+      --  Region 13 is not programmed here: a program without a tasking unit
       --  has no interrupt stack, and a window at its start would sit on the
-      --  fault stack (test_guard_taskless); region 2 is the environment's.
-      Ada.Text_IO.Put_Line ("the environment guard in place (region 2): "
-                            & Boolean'Image (Enabled (2)));
+      --  fault stack (test_guard_taskless); region 14 is the environment's.
+      Ada.Text_IO.Put_Line ("the environment guard in place (region 14): "
+                            & Boolean'Image (Enabled (14)));
       Ada.Text_IO.Put_Line ("===TEST COMPLETE===");
    else
       Ada.Text_IO.Put_Line ("first pass: regions 3 and 7 enabled over unused SRAM4, then the hand-over");

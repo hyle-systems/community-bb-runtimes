@@ -2,4 +2,7 @@ first pass: TIMPRE set, an MPU region over unused SRAM4 and the MPU on, then the
 second pass, after a hand-over with TIMPRE set and the MPU on
 TIMPRE at its reset value: TRUE
 MPU off, the guard being off: TRUE
+lazy floating-point stacking re-established: TRUE
+on the environment stack, not the bootloader's, BASEPRI at zero: TRUE
+interrupts unmasked, the bootloader having jumped with PRIMASK set: TRUE
 ===TEST COMPLETE===

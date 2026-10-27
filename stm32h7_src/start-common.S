@@ -26,6 +26,9 @@
 #                                                                           #
 #############################################################################
 
+/* The STM32H7 family's start-up, derived from bb-runtimes'
+   arm/stm32/start-common.S (the submodule at v16.1.0-1, d7ab8df). */
+
 	.syntax unified
 	.cpu cortex-m7
 	.thumb
@@ -36,6 +39,11 @@
 	.type _stm32_start_common, %function
 _stm32_start_common:
 
+        /* Called from start-rom.S and start-ram.S before anything else, with
+           nothing on the stack: it uses r0 .. r8 and r11 freely, the
+           callee-saved ones included, and sets the main stack pointer;
+           both callers expect exactly that. */
+
         /* The vector table from handler.S, in every profile, before the first
            instruction that can fault. Upstream's start-rom.S carries a five-
            entry table for the light runtime whose fault entries hang, and the
@@ -44,6 +52,53 @@ _stm32_start_common:
            The memory-management, bus and usage fault exceptions are enabled
            here as well, so that a fault keeps its own name in the report
            instead of escalating to HardFault. */
+        /* What a bootloader may leave that would interrupt the start-up or
+           that the runtime assumes at its reset value (an image entered by
+           a branch, not by a reset; nothing to do after a reset): the
+           SysTick stopped, every interrupt disabled and unpended, the
+           PendSV and SysTick requests cleared (PM0253 4.3.3, 4.4.1, 4.2);
+           BASEPRI at zero, the thread on the main stack (CONTROL = 0,
+           privileged, no floating-point context), the main stack pointer
+           at the top of the environment stack (start-rom.S never loads it:
+           the core does, from the vector table, on a reset only); the MPU
+           off before the first RAM write, so that a region left over the
+           ITCM or the AXI SRAM cannot fault the ECC zeroing below (the
+           guard, when on, is programmed again at guard_init); lazy
+           floating-point stacking, ASPEN and LSPEN in FPCCR, as at reset
+           (PM0253 4.7.2), which the tasking runtime's context switch
+           relies on. PRIMASK, which a bootloader sets before its jump, is
+           cleared once the vector table is in place, nothing being left
+           that can interrupt: the light profile never clears it, and with
+           it set a configurable fault would escalate to HardFault. This
+           runs before any stack use: nothing has been pushed yet. */
+        ldr     r0, =0xE000E010         /* SYST_CSR */
+        movs    r1, #0
+        str     r1, [r0]
+        ldr     r0, =0xE000E180         /* NVIC_ICER0; ICPR0 at +0x100 */
+        mov     r1, #0xFFFFFFFF
+        movs    r2, #8
+0:      str     r1, [r0, #0x100]
+        str     r1, [r0], #4
+        subs    r2, r2, #1
+        bne     0b
+        ldr     r0, =0xE000ED04         /* ICSR */
+        ldr     r1, =0x0A000000         /* PENDSVCLR, PENDSTCLR */
+        str     r1, [r0]
+        movs    r1, #0
+        msr     basepri, r1
+        msr     control, r1
+        isb
+        ldr     r0, =__stack_end
+        mov     sp, r0
+        ldr     r0, =0xE000ED94         /* MPU_CTRL */
+        str     r1, [r0]
+        ldr     r0, =0xE000EF34         /* FPCCR */
+        ldr     r1, [r0]
+        orr     r1, r1, #0xC0000000     /* ASPEN, LSPEN */
+        str     r1, [r0]
+        dsb
+        isb
+
         ldr     r0, =__vectors
         ldr     r1, =0xE000ED08         /* SCB VTOR */
         str     r0, [r1]
@@ -53,6 +108,7 @@ _stm32_start_common:
         str     r2, [r1]
         dsb
         isb
+        cpsie   i                       /* PRIMASK at its reset value */
 
         /* The core's supply arrangement (RM0468 6.4, Table 30), from the crate
            option Supply_Configuration through __supply_cr3 (a --defsym from the
@@ -69,11 +125,23 @@ _stm32_start_common:
         ldr     r2, =__supply_cr3
         orr     r1, r1, r2
         str     r1, [r0]
-        /* Bounded at about 100 ms of the 64 MHz reset clock (the level is
-           specified in microseconds; the HAL bounds the same wait and returns
-           an error): on expiry a park a debugger can name, instead of a spin
-           somewhere in the start-up. A board wired for another arrangement
-           ends here. */
+        /* The byte is write-once until a power-on reset (RM0468 6.8.4): a
+           different arrangement left locked by a bootloader or by a previous
+           image makes the write above a no-op. Read back and compared before
+           the wait, so that a mismatch parks at the label that names it
+           rather than at the wait's. */
+        ldr     r1, [r0]
+        and     r1, r1, #0x3F
+        ldr     r2, =__supply_cr3
+        cmp     r1, r2
+        bne     __gnat_supply_mismatch
+        /* Bounded at 2**21 polls of PWR_CSR1 - a few hundred milliseconds on
+           the 64 MHz reset clock, from the flash with seven wait states and
+           the caches off (not measured), where the level is specified in
+           microseconds; ST's HAL bounds the same wait and returns an error.
+           On expiry a park a debugger can name, instead of a spin somewhere
+           in the start-up. A board wired for another arrangement ends
+           here. */
         ldr     r0, =0x58024804         /* PWR_CSR1 */
         ldr     r3, =0x200000
 1:      ldr     r1, [r0]
@@ -101,22 +169,10 @@ _stm32_start_common:
         bne     2b
         b       __gnat_supply_not_ready
 3:
-        /* The byte is write-once until a power-on reset (RM0468 6.8.4): a
-           different arrangement left locked by a bootloader or by a previous
-           image makes the write above a no-op, and the wait passes on the
-           old arrangement. Compared here; a mismatch parks at a label a
-           debugger can name (the fourth review, Z6). */
-        ldr     r0, =0x5802480C         /* PWR_CR3 */
-        ldr     r1, [r0]
-        and     r1, r1, #0x3F
-        ldr     r2, =__supply_cr3
-        cmp     r1, r2
-        bne     __gnat_supply_mismatch
-
         /* The fault report's re-entry latch (System.BB.Faults.Reporting) lives
            in .bss, which is zeroed later, while the fault vectors are already
            live - and the DTCM keeps it across a warm reset. Cleared here, the
-           first RAM write, now that the supply is valid (the fourth review). */
+           first RAM write, now that the supply is valid */
         ldr     r0, =__gnat_fault_reporting
         movs    r1, #0
         strb    r1, [r0]
@@ -222,7 +278,7 @@ tcm_init:
         dsb
         .endm
 
-        /* A hand-over with the data cache on (the fourth review, Z4): the
+        /* A hand-over with the data cache on: the
            zeroing below must reach memory, and the invalidate before the
            enable (init_cache) would discard dirty lines, so a cache found on
            is cleaned and invalidated and turned off first. A cold start
@@ -262,7 +318,7 @@ ecc_init:
         /* The map describes the default sharing: an .axisram, or a RAM-loaded
            image, that reaches beyond the device's AXI SRAM would bus-fault
            before main. Compared here against the device's size; a mismatch
-           parks at a label a debugger can name (the fourth review, Z18).
+           parks at a label a debugger can name.
            __ccmdata_end is weak: a user script may not define it. */
         .weak   __ccmdata_end
         movw    r0,#:lower16:__axisram_start
@@ -272,6 +328,10 @@ ecc_init:
         cmp     r0,r1
         bhi     __gnat_axisram_mismatch
         ldr     r0,=__ecc_axisram_zero_start
+        cmp     r0,r1
+        bhi     __gnat_axisram_mismatch
+        .weak   __axisram_bss_end
+        ldr     r0,=__axisram_bss_end
         cmp     r0,r1
         bhi     __gnat_axisram_mismatch
         movs    r2,#0
@@ -293,6 +353,47 @@ ecc_init:
 0:      cmp     r0,r1
         bhs     1f
         strd    r2,r3,[r0],#8
+        b       0b
+1:      dsb
+
+sram_init:
+        /* .sram12 and .sram4 from their load images (the linker scripts):
+           their objects' initial values, the implicit ones too. The SRAM1
+           and SRAM2 clocks are off after reset (RM0468 8.7.41): enabled
+           first when .sram12 is not empty, and read back so that the
+           enable has taken effect before the first access; SRAM4's is on.
+           Whole-word copies, so every word carries a valid ECC. The data
+           cache is still off. The symbols are weak: a user script may
+           define neither section. */
+        .weak   __sram12_start
+        .weak   __sram12_end
+        .weak   __sram12_load
+        .weak   __sram4_start
+        .weak   __sram4_end
+        .weak   __sram4_load
+        ldr     r0, =__sram12_start
+        ldr     r1, =__sram12_end
+        cmp     r0, r1
+        bhs     2f
+        ldr     r2, =0x580244DC         /* RCC_AHB2ENR */
+        ldr     r3, [r2]
+        orr     r3, r3, #0x60000000     /* SRAM1EN, SRAM2EN */
+        str     r3, [r2]
+        ldr     r3, [r2]
+        dsb
+        ldr     r2, =__sram12_load
+0:      cmp     r0, r1
+        bhs     2f
+        ldr     r3, [r2], #4
+        str     r3, [r0], #4
+        b       0b
+2:      ldr     r0, =__sram4_start
+        ldr     r1, =__sram4_end
+        ldr     r2, =__sram4_load
+0:      cmp     r0, r1
+        bhs     1f
+        ldr     r3, [r2], #4
+        str     r3, [r0], #4
         b       0b
 1:      dsb
 
@@ -335,8 +436,8 @@ init_cache:
 
 guard_init:
         /* Stack_Guard, a crate option of the tasking profiles: the two
-           static guards - MPU region 1, a no-access window at the bottom of
-           the interrupt stack where there is one, and region 2, the same
+           static guards - MPU region 13, a no-access window at the bottom of
+           the interrupt stack where there is one, and region 14, the same
            under the environment stack - programmed here, once, for every
            program; the tasking runtime checks that this block ran and adds
            each task's window as it switches. A light-tasking program with no
@@ -356,7 +457,7 @@ guard_init:
         blo     mpu_off
         /* The MPU off and every region cleared first (PM0253 4.6.9): a
            bootloader, or a debugger's reload without a reset, may have left
-           regions enabled (the fourth review, Z12). */
+           regions enabled */
         ldr     r2, =0xE000ED94         /* MPU_CTRL */
         movs    r3, #0
         str     r3, [r2]
@@ -379,7 +480,7 @@ guard_init:
         orr     r1, r1, #1              /* ENABLE */
         sub     r4, r0, #1              /* the window's alignment mask */
         ldr     r2, =0xE000ED9C         /* MPU_RBAR; RASR at +4 */
-        /* Region 1 only where there is an interrupt stack: a light-tasking
+        /* Region 13 only where there is an interrupt stack: a light-tasking
            program without a tasking unit has none (the section is empty,
            start = end), and a window at its start would sit on the fault
            stack that follows it. */
@@ -389,13 +490,13 @@ guard_init:
         beq     2f
         add     r3, r3, r4
         bic     r3, r3, r4              /* rounded up to the window */
-        orr     r3, r3, #0x11           /* VALID, region 1 */
+        orr     r3, r3, #0x1D           /* VALID, region 13 */
         str     r3, [r2]
         str     r1, [r2, #4]
 2:      ldr     r3, =__stack_start
         add     r3, r3, r4
         bic     r3, r3, r4
-        orr     r3, r3, #0x12           /* VALID, region 2 */
+        orr     r3, r3, #0x1E           /* VALID, region 14 */
         str     r3, [r2]
         str     r1, [r2, #4]
         movs    r3, #5                  /* ENABLE, PRIVDEFENA */
@@ -407,17 +508,19 @@ guard_init:
 
 mpu_off:
         /* The guard off: the MPU at its reset state, whatever a bootloader
-           left (the fourth review, Z9). */
+           left */
         movs    r3, #0
         ldr     r2, =0xE000ED94         /* MPU_CTRL */
         str     r3, [r2]
         dsb
         isb
-        b       end
+end:
+        bx lr
+        .size _stm32_start_common, . - _stm32_start_common
 
-        /* Two parking places, named for a debugger: the locked supply byte
-           differs from the crate's (Z6); the map's .axisram exceeds the
-           device's AXI SRAM at its TCM sharing (Z18). */
+        /* Parking places, named for a debugger: the locked supply byte
+           differs from the crate's; the map's .axisram exceeds the device's
+           AXI SRAM at its TCM sharing. */
         .globl  __gnat_supply_mismatch
         .type   __gnat_supply_mismatch, %function
         .thumb_func
@@ -454,7 +557,3 @@ __gnat_pll_not_locked:
         .thumb_func
 __gnat_clock_not_ready:
         b       __gnat_clock_not_ready
-
-end:
-        bx lr
-        .size _stm32_start_common, . - _stm32_start_common

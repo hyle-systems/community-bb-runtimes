@@ -1,4 +1,4 @@
---  Z4 of the fourth review: a bootloader that leaves the data cache on. The
+--  A bootloader that leaves the data cache on. The
 --  start-up zeroes the ECC RAMs and then invalidates the data cache by set
 --  and way before enabling it; a cache that was already on holds the zero
 --  lines dirty, and an invalidate without a clean throws them away. The

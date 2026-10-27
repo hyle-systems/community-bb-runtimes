@@ -1,4 +1,4 @@
---  Built only by test_negative_builds.py (Z2 of the fourth review).
+--  Built only by test_negative_builds.py.
 
 with Ada.Text_IO;
 with Interfaces; use Interfaces;

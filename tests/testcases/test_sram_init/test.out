@@ -1,0 +1,6 @@
+.sram12 access: null by default TRUE
+.sram12 table: initial values TRUE
+.sram4 record: initial value TRUE
+.sram12 record elaborated with its defaults TRUE
+.axisram_bss: zero TRUE
+===TEST COMPLETE===

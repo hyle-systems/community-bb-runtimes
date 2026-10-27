@@ -34,6 +34,9 @@
  *                                                                          *
  ****************************************************************************/
 
+/* The STM32H7 family's script, derived from this repository's
+   stm32g4_src/ld/common-ROM.ld. */
+
 /* This is a ARM specific version of this file */
 
 /* This script replaces ld's default linker script, providing the
@@ -171,6 +174,17 @@ SECTIONS
   ASSERT (__ccmdata_load + (__ccmdata_words << 2) <= ORIGIN(flash) + LENGTH(flash),
           "initial values exceed the flash: the load images of .data and .axisram run past its end")
 
+  /* Objects in the AXI SRAM that need no initial value but zero - large
+     DMA buffers: not stored in the flash and not copied (a .axisram
+     object takes its size in flash, zeroes included). The start-up's ECC
+     initialisation zeroes the whole AXI SRAM, so they read zero. */
+  .axisram_bss (NOLOAD) : {
+    . = ALIGN(8);
+    *(.axisram_bss .axisram_bss.*)
+    . = ALIGN(8);
+    __axisram_bss_end = .;
+  } > ccm_da
+
   .bss (NOLOAD): {
    . = ALIGN(0x8);
    __bss_start = .;
@@ -226,15 +240,33 @@ SECTIONS
   } > sram_bs
 
   __bss_words = (__bss_end - __bss_start) >> 2;
+  /* The start-up's copy and zeroing loops for .data and .bss (upstream's
+     start-rom.S and start-ram.S) load the word count with a single movw:
+     65 535 words at most, and a larger count is reduced modulo 65 536 with
+     no error. Unreachable with this map (the DTCM is 128 KB); a script
+     derived from this one with a larger home for them is refused here. */
+  ASSERT (__data_words < 65536,
+          ".data above 256 KB: the start-up's copy counts 16 bits (start-rom.S movw)")
+  ASSERT (__bss_words < 65536,
+          ".bss above 256 KB: the start-up's zeroing counts 16 bits (start-rom.S movw)")
 
   /* The RAMs a DMA can reach - SRAM1 and SRAM2 (D2, contiguous) and SRAM4
-     (D3); a DMA cannot address the DTCM, where everything else lives. No
-     initial values: the application enables their clocks (RCC_AHB2ENR
-     SRAM1EN/SRAM2EN for the first two) and writes them whole-word before any
-     sub-word use, their ECC being undefined after power-up. They are
-     cacheable in the default memory map: a DMA buffer here needs the cache
-     maintenance, or an MPU region of its own (the stack guard uses 0 to 3). */
-  .sram12 (NOLOAD) : {
+     (D3); a DMA cannot address the DTCM, where everything else lives.
+     .sram12 and .sram4 carry their objects' initial values, the implicit
+     ones too (a null access, a record's default components: GNAT emits
+     them as data, and a NOLOAD section would drop them without a word):
+     the start-up enables the SRAM1/SRAM2 clocks when .sram12 is not empty
+     (RCC_AHB2ENR SRAM1EN/SRAM2EN, off after reset) and copies both images
+     whole-word, which also leaves their ECC valid. .sram12_noinit and
+     .sram4_noinit are neither loaded nor zeroed - large buffers, or records
+     that must survive a reset (SRAM4 keeps its contents while powered):
+     write them whole-word before any sub-word use, their ECC being
+     undefined after power-up, and enable the SRAM1/SRAM2 clocks first if
+     .sram12 is empty. Cacheable in the default memory map: a DMA buffer
+     here needs the cache maintenance, or an MPU region of its own (the
+     stack guard uses 12 to 15). */
+  __sram12_load = __ccmdata_load + (__ccmdata_words << 2);
+  .sram12 : AT (__sram12_load) {
     . = ALIGN(8);
     __sram12_start = .;
     *(.sram12 .sram12.*)
@@ -242,13 +274,31 @@ SECTIONS
     __sram12_end = .;
   } > sram12
 
-  .sram4 (NOLOAD) : {
+  .sram12_noinit (NOLOAD) : {
+    . = ALIGN(8);
+    *(.sram12_noinit .sram12_noinit.*)
+    . = ALIGN(8);
+  } > sram12
+
+  __sram4_load = __sram12_load + (__sram12_end - __sram12_start);
+  .sram4 : AT (__sram4_load) {
     . = ALIGN(8);
     __sram4_start = .;
     *(.sram4 .sram4.*)
     . = ALIGN(8);
     __sram4_end = .;
   } > sram4
+
+  .sram4_noinit (NOLOAD) : {
+    . = ALIGN(8);
+    *(.sram4_noinit .sram4_noinit.*)
+    . = ALIGN(8);
+  } > sram4
+  __sram_images_end = __sram4_load + (__sram4_end - __sram4_start);
+  /* The flash holds the load images of .data, .axisram, .sram12 and
+     .sram4 one after the other. */
+  ASSERT (__sram_images_end <= ORIGIN(flash) + LENGTH(flash),
+          "initial values exceed the flash: the load images of .data, .axisram, .sram12 and .sram4 run past its end")
 
   /* DWARF debug sections.
      Symbols in the DWARF debugging sections are relative to the beginning

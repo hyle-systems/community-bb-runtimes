@@ -41,9 +41,10 @@
    the runtime's own state is deterministic and immune to cache coherency
    issues by construction. The AXI SRAM holds the ".axisram" section for
    large data (the generator's ".ccmdata" name is accepted there too) and,
-   for the RAM loader, the code: the core cannot execute from the DTCM.
-   SRAM1/2 and SRAM4 are left to the application (DMA buffers, under an MPU
-   region marked non-cacheable). */
+   for the RAM loader, the code: the DTCM is kept for the data and the
+   stacks (the core can execute from it, PM0253's memory map, but the
+   code would then compete with them for its 128 KB). SRAM1/2 and SRAM4
+   hold the sections of their names (DMA buffers). */
 
 MEMORY
 {

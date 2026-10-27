@@ -1,4 +1,4 @@
---  Z3 of the fourth review: a bootloader that leaves PLL2 (or PLL3) running
+--  A bootloader that leaves PLL2 (or PLL3) running
 --  from the HSI. RM0468 8.7.10: PLLSRC can be written only when all PLLs are
 --  disabled; 8.7.1: HSIDIV cannot be changed while an enabled PLL takes the
 --  HSI. A start-up that turns off PLL1 alone writes PLLSRC and HSIDIV into
