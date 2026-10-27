@@ -42,11 +42,20 @@ package body System.BB.Faults is
    --  afterwards, since a fault raised here does not come back to the
    --  program (the handler does not return).
 
+   Cause : Interfaces.Unsigned_8 := 0
+     with Volatile, Export, Convention => Asm,
+          External_Name => "__gnat_fault_cause";
+   --  Set by a fault the runtime raises on purpose, before the faulting
+   --  instruction (handler.S, __gnat_stack_below_windows: 1, a task stack
+   --  below four guard windows), so that the report names the cause rather
+   --  than the vector
+
    ------------
    -- Report --
    ------------
 
    procedure Report (Vector : Interfaces.Unsigned_32) is
+      use type Interfaces.Unsigned_8;
    begin
       if Reporting then
          loop
@@ -54,6 +63,10 @@ package body System.BB.Faults is
          end loop;
       end if;
       Reporting := True;
+
+      if Cause = 1 then
+         raise Storage_Error with "task stack below four guard windows";
+      end if;
 
       case Vector is
          when 2 =>

@@ -1,5 +1,5 @@
---  The guard across a context switch requested twice (Z1 of the fourth
---  review). test_guard_switch proves the outgoing task's window survives
+--  The guard across a context switch requested twice.
+--  test_guard_switch proves the outgoing task's window survives
 --  one request; here the alarm that wakes Waker lands inside a storm of a
 --  device interrupt, whose handler finishes after the alarm, finds the
 --  switch still pending (the running thread changes only in PendSV) and

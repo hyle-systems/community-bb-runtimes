@@ -1,5 +1,5 @@
 MPU_CTRL = 5
-region 1 (interrupt stack): enabled TRUE size 256 no access TRUE xn TRUE base at bottom TRUE
-region 2 (environment stack): enabled TRUE size 256 no access TRUE xn TRUE base at bottom TRUE
-region 0/3 (task): enabled TRUE size 256 no access TRUE xn TRUE base in window TRUE
+region 13 (interrupt stack): enabled TRUE size 256 whole TRUE no access TRUE xn TRUE base at bottom TRUE
+region 14 (environment stack): enabled TRUE size 256 whole TRUE no access TRUE xn TRUE base at bottom TRUE
+region 12/15 (task): enabled TRUE size 256 whole TRUE no access TRUE xn TRUE base in window TRUE
 ===TEST COMPLETE===

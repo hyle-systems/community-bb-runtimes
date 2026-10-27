@@ -1,3 +1,4 @@
 reading an unmapped address
 last chance: bus fault
+fault status kept: PRECISERR TRUE BFARVALID TRUE BFAR = 16#D000_0000# TRUE
 ===TEST COMPLETE===

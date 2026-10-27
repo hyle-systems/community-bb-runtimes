@@ -41,8 +41,8 @@ package body Switch_Probe is
       Best : Integer_Address := 0;
    begin
       Asm ("mov %0, sp", Outputs => Unsigned_32'Asm_Output ("=r", SP), Volatile => True);
-      for Region in Unsigned_32'(0) .. 3 loop
-         if Region = 0 or else Region = 3 then
+      for Region in Unsigned_32'(12) .. 15 loop
+         if Region = 12 or else Region = 15 then
             MPU_RNR := Region;
             declare
                RBAR : constant Unsigned_32 := MPU_RBAR;

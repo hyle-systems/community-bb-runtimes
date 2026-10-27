@@ -34,12 +34,15 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
---  The STM32H7 family's copy (community-bb-runtimes, stm32h7_src): one
+--  The STM32H7 family's copy (community-bb-runtimes, stm32h7_src) of
+--  bb-runtimes' src/s-bcpcst__pendsv.adb (the submodule at v16.1.0-1,
+--  d7ab8df): one
 --  addition in Pend_SV_Handler - the call to __gnat_guard_switch between
 --  the save of the outgoing context and the load of the incoming one, so
 --  that the MPU stack guard's task window is programmed where the switch
---  is made, once (System.BB.CPU_Primitives.Guard_Switch; the fourth
---  review's Z1). Everything else is upstream's s-bcpcst__pendsv.adb.
+--  is made, once (System.BB.CPU_Primitives.Guard_Switch), however many
+--  times the switch was requested before PendSV ran. Everything else is
+--  upstream's s-bcpcst__pendsv.adb.
 
 with System.BB.Parameters;
 with System.Machine_Code; use System.Machine_Code;

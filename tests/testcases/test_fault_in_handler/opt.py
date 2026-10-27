@@ -13,7 +13,9 @@ def check_test_conditions(target_info: support.target_info.TargetInfo):
 def crate_config_values(target_info: support.target_info.TargetInfo):
     return {
         f"{target_info.runtime_crate_name}.Stack_Guard": True,
-        f"{target_info.runtime_crate_name}.Stack_Guard_Bytes": 256,
+        # Wider than the overflow's frames (256 bytes of array plus the call's own), so that no frame
+        # can step over the window (README section 5, rule 2)
+        f"{target_info.runtime_crate_name}.Stack_Guard_Bytes": 512,
     }
 
 

@@ -23,8 +23,8 @@ package body Switch_Probe is
       Best : Integer_Address := 0;
    begin
       Asm ("mov %0, sp", Outputs => Unsigned_32'Asm_Output ("=r", SP), Volatile => True);
-      for Region in Unsigned_32'(0) .. 3 loop
-         if Region = 0 or else Region = 3 then
+      for Region in Unsigned_32'(12) .. 15 loop
+         if Region = 12 or else Region = 15 then
             MPU_RNR := Region;
             declare
                RBAR : constant Unsigned_32 := MPU_RBAR;
@@ -55,7 +55,16 @@ package body Switch_Probe is
       if N < 100_000 and then (Step = 0 or else Here - Step >= Window_Top + 112) then
          Dig (N + 1, Here);
       else
-         Headroom := Here - Window_Top;
+         --  The headroom from the stack pointer itself, not from a local's
+         --  address: an exception entry's frame (104 bytes with the FPU in
+         --  use) must fit above the window, or the entry faults before any
+         --  switch and the test proves nothing (the handler's CFSR line)
+         declare
+            SP : Integer_Address;
+         begin
+            Asm ("mov %0, sp", Outputs => Integer_Address'Asm_Output ("=r", SP), Volatile => True);
+            Headroom := SP - Window_Top;
+         end;
          Go := True;
          loop
             exit when Mark = 0;   --  never: spin until Waker takes the processor

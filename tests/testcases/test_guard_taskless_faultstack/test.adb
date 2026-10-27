@@ -1,5 +1,5 @@
 --  A light-tasking program with no tasking unit has an empty interrupt
---  stack; the start-up's region 1, "at the interrupt stack's start", would
+--  stack; the start-up's region 13, "at the interrupt stack's start", would
 --  then sit on the fault stack that follows it. With a 512-byte window and a
 --  512-byte fault stack the whole fault stack is no-access: the report's
 --  first push faults and the write below is reported as a hard fault. The

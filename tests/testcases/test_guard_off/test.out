@@ -3,4 +3,16 @@ region 0 enabled: FALSE
 region 1 enabled: FALSE
 region 2 enabled: FALSE
 region 3 enabled: FALSE
+region 4 enabled: FALSE
+region 5 enabled: FALSE
+region 6 enabled: FALSE
+region 7 enabled: FALSE
+region 8 enabled: FALSE
+region 9 enabled: FALSE
+region 10 enabled: FALSE
+region 11 enabled: FALSE
+region 12 enabled: FALSE
+region 13 enabled: FALSE
+region 14 enabled: FALSE
+region 15 enabled: FALSE
 ===TEST COMPLETE===

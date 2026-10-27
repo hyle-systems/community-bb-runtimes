@@ -9,8 +9,12 @@ package body Test_LCH is
      with Import, Convention => Asm, External_Name => "__interrupt_stack_end";
    Interrupt_Stack_Start : constant Character
      with Import, Convention => Asm, External_Name => "__interrupt_stack_start";
+   Fault_Stack_Start : constant Character
+     with Import, Convention => Asm, External_Name => "__fault_stack_start";
+   Fault_Stack_End : constant Character
+     with Import, Convention => Asm, External_Name => "__fault_stack_end";
    --  The stack pointer at the fault, kept by the trap before it moves to
-   --  the fault stack (Z12 of the fourth review)
+   --  the fault stack
    Fault_SP : constant Unsigned_32
      with Import, Convention => Asm, External_Name => "__gnat_fault_sp";
 
@@ -39,11 +43,10 @@ package body Test_LCH is
          end if;
       end loop;
       Ada.Text_IO.Put_Line ("last chance: " & Text (First .. Last));
-      if To_Integer (SP) > To_Integer (Interrupt_Stack_End'Address) then
-         Ada.Text_IO.Put_Line ("reported above the interrupt stack: TRUE");
-      else
-         Ada.Text_IO.Put_Line ("reported above the interrupt stack: FALSE");
-      end if;
+      Ada.Text_IO.Put_Line
+        ("reported on the fault stack: "
+         & Boolean'Image (To_Integer (SP) >= To_Integer (Fault_Stack_Start'Address)
+                          and then To_Integer (SP) < To_Integer (Fault_Stack_End'Address)));
       Ada.Text_IO.Put_Line
         ("faulting SP in the interrupt stack: "
          & Boolean'Image (Integer_Address (Fault_SP) >= To_Integer (Interrupt_Stack_Start'Address)

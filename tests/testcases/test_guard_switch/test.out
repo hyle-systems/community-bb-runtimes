@@ -1,4 +1,5 @@
 digging towards the window with the FPU in use
 last chance: memory management fault
 headroom in band: TRUE
+fault at the save (a data access), not at an exception entry: TRUE
 ===TEST COMPLETE===

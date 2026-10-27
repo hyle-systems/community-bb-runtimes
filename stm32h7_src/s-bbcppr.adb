@@ -31,6 +31,9 @@
 --  This version is for ARM bareboard targets using the ARMv7-M targets,
 --  which only use Thumb2 instructions.
 
+--  The STM32H7 family's copy of bb-runtimes' src/s-bbcppr__armv7m.adb (the
+--  submodule at v16.1.0-1, d7ab8df), with the MPU stack guard added.
+
 with Ada.Unchecked_Conversion; use Ada;
 
 with System.Multiprocessors;
@@ -123,8 +126,12 @@ package body System.BB.CPU_Primitives is
    --  Stack_Guard_Bytes at each stack's bottom, so the first write past the
    --  bottom of a stack is a precise MemManage fault into the fault trap and
    --  the last-chance handler ("memory management fault") instead of a
-   --  silent walk into whatever lies below. Four regions are used: 0 and 3
-   --  for the tasks - the PendSV handler programs the incoming thread's
+   --  silent walk into whatever lies below. The guard takes the four
+   --  highest regions, because where regions overlap the highest number
+   --  decides (PM0253 4.6): an application's own region, in 0 .. 11, can
+   --  then cover a stack - a whole-DTCM attribute region, say - without
+   --  disarming its window. 12 and 15 hold the tasks' windows - the PendSV
+   --  handler programs the incoming thread's
    --  window (Guard_Switch) in whichever of the two does not hold the
    --  outgoing thread's, after it has saved the outgoing registers and
    --  before it loads the incoming ones, so both stacks are guarded
@@ -132,7 +139,7 @@ package body System.BB.CPU_Primitives is
    --  the MPU, because a switch is requested as many times as interrupts
    --  find it pending before PendSV runs, and a region that moved on
    --  every request overwrote the outgoing window on the second one;
-   --  1 for the interrupt stack; 2 for the environment task's stack (its
+   --  13 for the interrupt stack; 14 for the environment task's stack (its
    --  static copy, so the first thread is covered before any switch).
    --  The stale window left in the other task region sits at the bottom
    --  of a suspended thread's stack, which nothing writes until that
@@ -142,7 +149,10 @@ package body System.BB.CPU_Primitives is
    --  NMI handlers (HFNMIENA = 0). A guard costs the interrupt and
    --  environment stacks one window (the linker aligns them to it) and a
    --  task's stack between one and two. Applications that use the MPU
-   --  themselves should start at region 4.
+   --  themselves use regions 0 to 11. The switch leaves MPU_RNR as it found
+   --  it, so a task may be preempted between selecting its region and
+   --  writing it; an interrupt handler that programs the MPU must restore
+   --  MPU_RNR itself, since it may preempt the switch.
 
    Stack_Guard : constant Boolean := System.BB.Parameters.Stack_Guard;
 
@@ -183,8 +193,8 @@ package body System.BB.CPU_Primitives is
    --  XN; AP = 000, no access for anyone (Table 93); SIZE at bits 5:1;
    --  ENABLE. TEX, C, B, S are irrelevant for a region nobody may touch.
 
-   Region_Thread_A    : constant Word := 0;
-   Region_Thread_B    : constant Word := 3;
+   Region_Thread_A    : constant Word := 12;
+   Region_Thread_B    : constant Word := 15;
 
    Region_Holder : array (Boolean) of System.BB.Threads.Thread_Id :=
      (False => null, True => null);
@@ -498,8 +508,8 @@ package body System.BB.CPU_Primitives is
          + (Guard_Bytes - 1)) and not Word'(Guard_Bytes - 1);
    begin
       --  A region previously enabled is disabled before its settings change
-      --  (PM0253 4.6.8); regions 0 and 3 alternate at the context switches
-      --  (Guard_Switch); 1 and 2 are the start-up's.
+      --  (PM0253 4.6.8); regions 12 and 15 alternate at the context switches
+      --  (Guard_Switch); 13 and 14 are the start-up's.
       MPU_RNR  := Region;
       MPU_RASR := 0;
       MPU_RBAR := Base or 16#10# or Region;  --  VALID: selects the region
@@ -516,26 +526,38 @@ package body System.BB.CPU_Primitives is
    is
       use type System.BB.Threads.Thread_Id;
       use System.Storage_Elements;
+
+      procedure Stack_Below_Windows
+        with No_Return, Import, Convention => C,
+             External_Name => "__gnat_stack_below_windows";
+      --  handler.S: the fault path with its own report - interrupts masked,
+      --  the fault stack, the re-entry latch - as for a fault, not a raise
+      --  from here, which would run at PendSV's priority on the interrupt
+      --  stack with every interrupt still live
+
       --  The region that does not hold the outgoing thread's window
       Use_B : constant Boolean := Region_Holder (False) = Outgoing;
    begin
       if Stack_Guard and then Region_Holder (Use_B) /= Incoming then
          --  Sizing rule 1 at the first switch to a thread: a stack below
          --  four windows cannot hold its window inside it, and a window
-         --  placed over the neighbour would fault there, not here (the
-         --  fourth review, Z8). Raised in handler mode, the path every
-         --  profile's fault report takes: light-tasking calls the
-         --  last-chance handler at once, embedded's unwinder meets the
-         --  exception return and terminates into it.
+         --  placed over the neighbour would fault there, not here.
          if To_Integer (Incoming.Top_Of_Stack)
               - To_Integer (Incoming.Bottom_Of_Stack) < 4 * Guard_Bytes
          then
-            raise Storage_Error with
-              "task stack below four guard windows";
+            Stack_Below_Windows;
          end if;
-         Set_Guard
-           ((if Use_B then Region_Thread_B else Region_Thread_A),
-            Incoming.Bottom_Of_Stack);
+
+         --  The thread preempted here may be between selecting a region of
+         --  its own in MPU_RNR and writing it: the selection is put back.
+         declare
+            Selected : constant Word := MPU_RNR;
+         begin
+            Set_Guard
+              ((if Use_B then Region_Thread_B else Region_Thread_A),
+               Incoming.Bottom_Of_Stack);
+            MPU_RNR := Selected;
+         end;
          Region_Holder (Use_B) := Incoming;
       end if;
    end Guard_Switch;

@@ -1,4 +1,4 @@
---  Z8 of the fourth review: a task whose stack is smaller than four guard
+--  A task whose stack is smaller than four guard
 --  windows. The window's base is rounded up to the window's alignment; in a
 --  stack this small the window would lie over whatever follows the stack,
 --  and the fault would come from a neighbour, some time, instead of from

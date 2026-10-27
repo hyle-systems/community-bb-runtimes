@@ -62,9 +62,9 @@ begin
       Has_Length : constant Boolean :=
         To_Integer (Interrupt_Stack_Start'Address) /= To_Integer (Interrupt_Stack_End'Address);
    begin
-      Read (1, RBAR, RASR);
+      Read (13, RBAR, RASR);
       Ada.Text_IO.Put_Line
-        ("region 1 (interrupt stack): programmed iff the stack has a length "
+        ("region 13 (interrupt stack): programmed iff the stack has a length "
          & Boolean'Image (Enabled (RASR) = Has_Length)
          & ", and then at its start, 256 bytes, no access "
          & Boolean'Image
@@ -73,9 +73,9 @@ begin
                        and then Window_256_No_Access (RASR))));
    end;
 
-   Read (2, RBAR, RASR);
+   Read (14, RBAR, RASR);
    Ada.Text_IO.Put_Line
-     ("region 2 (environment stack): at its start "
+     ("region 14 (environment stack): at its start "
       & Boolean'Image (At_Start (RBAR, Environment_Stack_Start'Address))
       & " enabled " & Boolean'Image (Enabled (RASR))
       & " 256 bytes, no access " & Boolean'Image (Window_256_No_Access (RASR)));

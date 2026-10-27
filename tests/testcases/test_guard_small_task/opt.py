@@ -12,7 +12,9 @@ def check_test_conditions(target_info: support.target_info.TargetInfo):
 def crate_config_values(target_info: support.target_info.TargetInfo):
     return {
         f"{target_info.runtime_crate_name}.Stack_Guard": True,
-        f"{target_info.runtime_crate_name}.Stack_Guard_Bytes": 512,
+        f"{target_info.runtime_crate_name}.Stack_Guard_Bytes": 256,
+        # The smallest interrupt stack the crate accepts: the report must not run on it.
+        f"{target_info.runtime_crate_name}.Interrupt_Stack_Size": 1024,
     }
 
 

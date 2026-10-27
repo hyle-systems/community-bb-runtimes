@@ -20,7 +20,7 @@ package body Guard_Probe is
    -- Task_Region --
    -----------------
 
-   --  The running task's window is in region 0 or 3 (the runtime alternates
+   --  The running task's window is in region 12 or 15 (the runtime alternates
    --  them across context switches): the enabled one whose base is below
    --  the stack pointer and nearest to it; 99 when neither is.
    function Task_Region return Unsigned_32 is
@@ -29,8 +29,8 @@ package body Guard_Probe is
       Hit  : Unsigned_32 := 99;
    begin
       Asm ("mov %0, sp", Outputs => Unsigned_32'Asm_Output ("=r", SP), Volatile => True);
-      for Region in Unsigned_32'(0) .. 3 loop
-         if Region = 0 or else Region = 3 then
+      for Region in Unsigned_32'(12) .. 15 loop
+         if Region = 12 or else Region = 15 then
             MPU_RNR := Region;
             declare
                RBAR : constant Unsigned_32 := MPU_RBAR;
@@ -65,9 +65,13 @@ package body Guard_Probe is
       Base := Integer_Address (RBAR and not 16#1F#);
       Size_Code := Natural (Shift_Right (RASR, 1) and 16#1F#);
       Ada.Text_IO.Put_Line
-        ("region" & (if Label = "task" then " 0/3" else Unsigned_32'Image (Region)) & " (" & Label & "): enabled "
+        ("region" & (if Label = "task" then " 12/15" else Unsigned_32'Image (Region)) & " (" & Label & "): enabled "
          & Boolean'Image ((RASR and 1) = 1)
          & " size" & Natural'Image (2 ** (Size_Code + 1))
+         --  SRD, bits 15:8: a disabled subregion would leave part of the
+         --  window open (PM0253 4.6.6); a window of 256 bytes or more has
+         --  subregions, and none may be disabled
+         & " whole " & Boolean'Image ((Shift_Right (RASR, 8) and 16#FF#) = 0)
          & " no access " & Boolean'Image ((Shift_Right (RASR, 24) and 7) = 0)
          & " xn " & Boolean'Image ((Shift_Right (RASR, 28) and 1) = 1)
          & (if Exact
