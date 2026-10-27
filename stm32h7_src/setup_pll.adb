@@ -103,16 +103,16 @@ procedure Setup_Pll is
            elsif HCLK_Freq <=  70_000_000 then 1
            else 2));
 
-   --  What the reset clock needs: the core comes out of reset on the 64 MHz
-   --  HSI with the AXI undivided, and the latency must stay good for it
-   --  until the switch - 1 wait state at VOS2 and VOS3 (Table 16). The
-   --  latency written before the switch is the larger of the two; the
+   --  What the reset clock needs: the core runs the 64 MHz HSI with the AXI
+   --  undivided until the switch (Reset_Clocks leaves it so), and the
+   --  latency is written while the scaling is still the present one - VOS3
+   --  after a reset (RM0468 6.6.2), whatever a bootloader left otherwise.
+   --  64 MHz needs 1 wait state at VOS3 and VOS2 and at most 1 at any
+   --  scaling (Table 16), so 1 whatever the target. The latency written
+   --  before the switch is the larger of this and the target's; the
    --  target's follows the switch when it is the smaller (RM0468 4.3.8:
    --  when the frequency falls, the clock first, the latency after).
-   Reset_Clock_Latency : constant :=
-     (case Config.Voltage_Scaling is
-        when Config.VOS0 | Config.VOS1 => 0,
-        when Config.VOS2 | Config.VOS3 => 1);
+   Reset_Clock_Latency : constant := 1;
    Switch_Latency : constant :=
      Integer'Max (Flash_Latency, Reset_Clock_Latency);
    Lower_Latency_After : constant Boolean :=
@@ -160,6 +160,31 @@ procedure Setup_Pll is
    PLL_Medium_Out_Max : constant :=
      (if Config.Voltage_Scaling = Config.VOS3 then 200_000_000
       else 210_000_000);
+
+   --  Every wait below is bounded. RM0468 and the datasheet give these in
+   --  microseconds (a PLL locks within 150 us, DS13313 Table 39), the HSE
+   --  in milliseconds; ST's HAL bounds the PLL waits at 2 ms and the HSE
+   --  at 100 ms and returns an error. The bound here is a count of polls,
+   --  well above those times at the 64 MHz reset clock; on expiry the
+   --  start-up parks at a label a debugger can name instead of spinning
+   --  somewhere unnamed: the HSE never ready (no clock on the input, or a
+   --  crystal configured as a bypass or the reverse), PLL1 never locked,
+   --  or another clock state that did not come (an oscillator, the switch,
+   --  the voltage scaling, a register write the hardware did not take).
+
+   Wait_Bound : constant := 2 ** 21;
+
+   --  The parks are start-common.S's, next to the supply's.
+
+   procedure HSE_Not_Ready
+     with No_Return, Import, Convention => C,
+          External_Name => "__gnat_hse_not_ready";
+   procedure PLL_Not_Locked
+     with No_Return, Import, Convention => C,
+          External_Name => "__gnat_pll_not_locked";
+   procedure Clock_Not_Ready
+     with No_Return, Import, Convention => C,
+          External_Name => "__gnat_clock_not_ready";
 
    -----------------------
    -- Initialize_Clocks --
@@ -257,18 +282,20 @@ procedure Setup_Pll is
       --  Supply_Configuration, before any RAM write; here only the wait for
       --  valid voltage levels is repeated before the voltage scaling changes.
 
-      loop
+      for N in 1 .. Wait_Bound loop
          exit when PWR_Periph.CSR1.ACTVOSRDY = 1;
+         if N = Wait_Bound then
+            Clock_Not_Ready;
+         end if;
       end loop;
 
       --  Flash latency first, read back as RM0468 4.3.8 requires: the
-      --  target's, or what the 64 MHz reset clock still needs where that is
-      --  more (Switch_Latency). Written before the voltage scaling changes:
-      --  by its definition it is enough for the current clock at the target
-      --  scaling, so it is enough at the present one too, and a scaling
-      --  lowered under a latency a bootloader left at zero never runs the
-      --  flash short (the fourth review, Z5). The target's latency then
-      --  follows the switch, at the end.
+      --  target's, or what the 64 MHz reset clock needs at the present
+      --  scaling where that is more (Switch_Latency). Written before the
+      --  voltage scaling changes, so that a scaling lowered under a latency
+      --  a bootloader left low never runs the flash short; it holds for the
+      --  64 MHz clock at every scaling, the present one and the target. The
+      --  target's latency then follows the switch, at the end.
 
       declare
          ACR : ACR_Register := Flash_Periph.ACR;
@@ -278,17 +305,23 @@ procedure Setup_Pll is
          Flash_Periph.ACR := ACR;
       end;
 
-      loop
+      for N in 1 .. Wait_Bound loop
          exit when Flash_Periph.ACR.LATENCY = Switch_Latency;
+         if N = Wait_Bound then
+            Clock_Not_Ready;
+         end if;
       end loop;
 
       --  Voltage scaling, then wait until it is the one applied and ready
 
       PWR_Periph.D3CR.VOS := VOS_Code;
 
-      loop
+      for N in 1 .. Wait_Bound loop
          exit when PWR_Periph.CSR1.ACTVOS = VOS_Code
-           and then PWR_Periph.CSR1.ACTVOSRDY = 1;
+              and then PWR_Periph.CSR1.ACTVOSRDY = 1;
+         if N = Wait_Bound then
+            Clock_Not_Ready;
+         end if;
       end loop;
 
       --  HSI divider: written whatever its value, so that a divider left by
@@ -301,23 +334,28 @@ procedure Setup_Pll is
            when Config.DIV4 => 2#10#,
            when Config.DIV8 => 2#11#);
 
-      loop
+      for N in 1 .. Wait_Bound loop
          exit when RCC_Periph.CR.HSIDIVF = 1;
+         if N = Wait_Bound then
+            Clock_Not_Ready;
+         end if;
       end loop;
 
       --  High-speed external clock, crystal or bypass (RM0468 8.5)
 
-      if HSE_Used then
-         declare
-            CR : Interfaces.STM32.RCC.CR_Register := RCC_Periph.CR;
-         begin
-            CR.HSEBYP := (if Config.HSE_Bypass then 1 else 0);
-            CR.HSEON  := 1;
-            RCC_Periph.CR := CR;
-         end;
+      --  HSEBYP can be written only while the oscillator is off (RM0468
+      --  8.7.1; Reset_Clocks turned it off and waited): the bypass alone,
+      --  then the oscillator, in two writes as ST's HAL does.
 
-         loop
+      if HSE_Used then
+         RCC_Periph.CR.HSEBYP := (if Config.HSE_Bypass then 1 else 0);
+         RCC_Periph.CR.HSEON  := 1;
+
+         for N in 1 .. Wait_Bound loop
             exit when RCC_Periph.CR.HSERDY = 1;
+            if N = Wait_Bound then
+               HSE_Not_Ready;
+            end if;
          end loop;
       end if;
 
@@ -326,8 +364,11 @@ procedure Setup_Pll is
       if Activate_PLL then
          RCC_Periph.CR.PLL1ON := 0;
 
-         loop
+         for N in 1 .. Wait_Bound loop
             exit when RCC_Periph.CR.PLL1RDY = 0;
+            if N = Wait_Bound then
+               Clock_Not_Ready;
+            end if;
          end loop;
 
          declare
@@ -343,19 +384,28 @@ procedure Setup_Pll is
             --  enabled) would leave another source behind every frequency
             --  the crate computed; the wait parks here instead, where it
             --  shows
-            loop
+            for N in 1 .. Wait_Bound loop
                exit when RCC_Periph.PLLCKSELR.PLLSRC = CKSEL.PLLSRC
-                 and then RCC_Periph.PLLCKSELR.DIVM1 = CKSEL.DIVM1;
+                    and then RCC_Periph.PLLCKSELR.DIVM1 = CKSEL.DIVM1;
+               if N = Wait_Bound then
+                  Clock_Not_Ready;
+               end if;
             end loop;
          end;
 
          declare
             DIVR : PLL1DIVR_Register := RCC_Periph.PLL1DIVR;
          begin
+            --  An output the configuration does not use has its divider at
+            --  zero as well as its enable (RM0468 8.5.5: "the application
+            --  shall set the enable bit (DIVyEN) as well as the
+            --  corresponding post-divider bits ... to 0")
             DIVR.DIVN1 := Config.PLL_N_Mul - 1;
-            DIVR.DIVP1 := Config.PLL_P_Div - 1;
-            DIVR.DIVQ1 := Config.PLL_Q_Div - 1;
-            DIVR.DIVR1 := Config.PLL_R_Div - 1;
+            DIVR.DIVP1 := (if PLL_P_Used then Config.PLL_P_Div - 1 else 0);
+            DIVR.DIVQ1 :=
+              (if Config.PLL_Q_Enable then Config.PLL_Q_Div - 1 else 0);
+            DIVR.DIVR1 :=
+              (if Config.PLL_R_Enable then Config.PLL_R_Div - 1 else 0);
             RCC_Periph.PLL1DIVR := DIVR;
          end;
 
@@ -371,12 +421,22 @@ procedure Setup_Pll is
             RCC_Periph.PLLCFGR := CFGR;
          end;
 
+         --  Integer mode: the modulator runs on the value latched into its
+         --  shadow register when PLL1FRACEN goes from 0 to 1, and keeps it
+         --  while the bit is 0 (RM0468 8.5.5), so a fraction a bootloader
+         --  latched would survive a FRACN1 of zero alone. Zero is written,
+         --  then latched by the edge, as ST's HAL does before every PLL
+         --  start.
          RCC_Periph.PLL1FRACR.FRACN1 := 0;
+         RCC_Periph.PLLCFGR.PLL1FRACEN := 1;
 
          RCC_Periph.CR.PLL1ON := 1;
 
-         loop
+         for N in 1 .. Wait_Bound loop
             exit when RCC_Periph.CR.PLL1RDY = 1;
+            if N = Wait_Bound then
+               PLL_Not_Locked;
+            end if;
          end loop;
       end if;
 
@@ -451,21 +511,27 @@ procedure Setup_Pll is
                      when Config.HSE  => 2#010#,
                      when Config.PLL1 => 2#011#);
 
-      --  The CSI, if it is the system clock: on and ready (on after reset;
-      --  a bootloader may have turned it off)
+      --  The CSI, if it is the system clock: on and ready (off after reset,
+      --  RM0468 8.7.2)
 
       if CSI_Used then
          RCC_Periph.CR.CSION := 1;
 
-         loop
+         for N in 1 .. Wait_Bound loop
             exit when RCC_Periph.CR.CSIRDY = 1;
+            if N = Wait_Bound then
+               Clock_Not_Ready;
+            end if;
          end loop;
       end if;
 
       RCC_Periph.CFGR.SW := SW_Value;
 
-      loop
+      for N in 1 .. Wait_Bound loop
          exit when RCC_Periph.CFGR.SWS = SW_Value;
+         if N = Wait_Bound then
+            Clock_Not_Ready;
+         end if;
       end loop;
 
       --  The target latency, where the reset clock needed more
@@ -479,8 +545,11 @@ procedure Setup_Pll is
             Flash_Periph.ACR := ACR;
          end;
 
-         loop
+         for N in 1 .. Wait_Bound loop
             exit when Flash_Periph.ACR.LATENCY = Flash_Latency;
+            if N = Wait_Bound then
+               Clock_Not_Ready;
+            end if;
          end loop;
       end if;
    end Initialize_Clocks;
@@ -491,25 +560,56 @@ procedure Setup_Pll is
 
    procedure Reset_Clocks is
    begin
+      --  The prescalers return to their reset values below, which can raise
+      --  the AXI clock to the 64 MHz HSI under a latency a bootloader left
+      --  for a lower clock: at least 1 wait state first (enough for 64 MHz
+      --  at every scaling, Table 16), never lowered here.
+
+      if Flash_Periph.ACR.LATENCY < 1 then
+         declare
+            ACR : ACR_Register := Flash_Periph.ACR;
+         begin
+            ACR.LATENCY    := 1;
+            ACR.WRHIGHFREQ :=
+              ACR_WRHIGHFREQ_Field'Max (ACR.WRHIGHFREQ, 1);
+            Flash_Periph.ACR := ACR;
+         end;
+
+         for N in 1 .. Wait_Bound loop
+            exit when Flash_Periph.ACR.LATENCY = 1;
+            if N = Wait_Bound then
+               Clock_Not_Ready;
+            end if;
+         end loop;
+      end if;
+
       --  Run from the HSI, as after reset, before touching anything else
 
       RCC_Periph.CR.HSION := 1;
 
-      loop
+      for N in 1 .. Wait_Bound loop
          exit when RCC_Periph.CR.HSIRDY = 1;
+         if N = Wait_Bound then
+            Clock_Not_Ready;
+         end if;
       end loop;
 
       --  The whole register at its reset value: SW = HSI, and TIMPRE, the
-      --  MCO and RTC prescalers and HRTIMSEL as after reset, whatever a
-      --  bootloader left (the fourth review, Z9)
+      --  MCO and RTC prescalers as after reset, whatever a bootloader left
 
       RCC_Periph.CFGR := (others => <>);
 
-      loop
+      for N in 1 .. Wait_Bound loop
          exit when RCC_Periph.CFGR.SWS = 2#000#;
+         if N = Wait_Bound then
+            Clock_Not_Ready;
+         end if;
       end loop;
 
-      --  Default prescalers, every PLL off, HSE off, no CSS, no bypass
+      --  Default prescalers, every PLL off, the HSE off and its bypass
+      --  cleared. A clock security system a bootloader armed stays armed:
+      --  HSECSSON is set-only (RM0468 8.7.1, "clearing this bit through
+      --  software has no impact"), and an HSE failure then raises the NMI.
 
       RCC_Periph.D1CFGR := (others => <>);
       RCC_Periph.D2CFGR := (others => <>);
@@ -530,20 +630,28 @@ procedure Setup_Pll is
          RCC_Periph.CR := CR;
       end;
 
-      loop
+      for N in 1 .. Wait_Bound loop
          exit when RCC_Periph.CR.PLL1RDY = 0
-           and then RCC_Periph.CR.PLL2RDY = 0
-           and then RCC_Periph.CR.PLL3RDY = 0;
+              and then RCC_Periph.CR.PLL2RDY = 0
+              and then RCC_Periph.CR.PLL3RDY = 0;
+         if N = Wait_Bound then
+            Clock_Not_Ready;
+         end if;
       end loop;
 
-      declare
-         CR : Interfaces.STM32.RCC.CR_Register := RCC_Periph.CR;
-      begin
-         CR.HSEON    := 0;
-         CR.HSECSSON := 0;
-         CR.HSEBYP   := 0;
-         RCC_Periph.CR := CR;
-      end;
+      --  HSEBYP can be written only while the oscillator is off (RM0468
+      --  8.7.1): the oscillator off and its ready flag down first
+
+      RCC_Periph.CR.HSEON := 0;
+
+      for N in 1 .. Wait_Bound loop
+         exit when RCC_Periph.CR.HSERDY = 0;
+         if N = Wait_Bound then
+            Clock_Not_Ready;
+         end if;
+      end loop;
+
+      RCC_Periph.CR.HSEBYP := 0;
    end Reset_Clocks;
 
 begin

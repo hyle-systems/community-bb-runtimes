@@ -435,6 +435,25 @@ __gnat_axisram_mismatch:
         .thumb_func
 __gnat_supply_not_ready:
         b       __gnat_supply_not_ready
+        /* The clock set-up's bounded waits (setup_pll.adb): the HSE never
+           ready (no clock on the input, or a crystal configured as a bypass
+           or the reverse), PLL1 never locked, or another clock state that
+           did not come within the bound. */
+        .globl  __gnat_hse_not_ready
+        .type   __gnat_hse_not_ready, %function
+        .thumb_func
+__gnat_hse_not_ready:
+        b       __gnat_hse_not_ready
+        .globl  __gnat_pll_not_locked
+        .type   __gnat_pll_not_locked, %function
+        .thumb_func
+__gnat_pll_not_locked:
+        b       __gnat_pll_not_locked
+        .globl  __gnat_clock_not_ready
+        .type   __gnat_clock_not_ready, %function
+        .thumb_func
+__gnat_clock_not_ready:
+        b       __gnat_clock_not_ready
 
 end:
         bx lr

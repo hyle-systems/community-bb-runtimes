@@ -50,7 +50,8 @@ procedure Test is
       Dummy     : Unsigned_32 with Volatile;
       LSE_Ready : Boolean := False;
       T0, T1    : Time;
-      C0, C1    : Unsigned_32;
+      Next      : Time;
+      Last, Now_Count, Sum : Unsigned_32;
       Ratio     : Long_Float;
    begin
       PWR_CR1 := PWR_CR1 or 2 ** 8;
@@ -79,10 +80,18 @@ procedure Test is
       LPTIM1_ICR := 16;
       LPTIM1_CR := 1 or 4;
       delay until Clock + Milliseconds (100);
-      T0 := Clock;  C0 := Count;
-      delay until T0 + Seconds (1);
-      T1 := Clock;  C1 := Count;
-      Ratio := Long_Float ((C1 - C0) and 16#FFFF#) / (32_768.0 * Long_Float (To_Duration (T1 - T0)));
+      --  Sampled every 100 ms and summed: the 16-bit counter would wrap
+      --  over one second, and a clock an odd factor slow would read as one
+      T0 := Clock;  Last := Count;  Sum := 0;  Next := T0;
+      for Step in 1 .. 10 loop
+         Next := Next + Milliseconds (100);
+         delay until Next;
+         Now_Count := Count;
+         Sum := Sum + ((Now_Count - Last) and 16#FFFF#);
+         Last := Now_Count;
+      end loop;
+      T1 := Clock;
+      Ratio := Long_Float (Sum) / (32_768.0 * Long_Float (To_Duration (T1 - T0)));
       Ada.Text_IO.Put_Line
         ("runtime second against the crystal, within 2 %: " & Boolean'Image (abs (Ratio - 1.0) < 0.02));
    end Cross_Check;

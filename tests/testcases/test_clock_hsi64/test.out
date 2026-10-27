@@ -1,4 +1,6 @@
 configured CPU clock MHz = 64
 LSE ready: TRUE
 runtime second against the crystal, within 2 %: TRUE
+voltage scaling applied: VOS0, as asked: TRUE
+flash wait states and programming delay per RM0468 Table 16: TRUE
 ===TEST COMPLETE===
