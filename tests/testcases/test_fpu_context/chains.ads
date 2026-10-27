@@ -7,8 +7,8 @@
 --
 --  The chains alone do not reach the callee-saved registers: compiled
 --  without optimisation, a chain's value lives in a stack slot across the
---  delay and no FP register is live at the switch (the fourth review's
---  sixth read, from the generated assembly). So every step also loads
+--  delay and no FP register is live at the switch (read in the generated
+--  assembly). So every step also loads
 --  d8-d15 (s16-s31, the registers PendSV saves and restores on the task's
 --  stack) with known patterns, delays, and reads them back - in one
 --  assembly block around the call that delays, so that no optimisation

@@ -3,6 +3,8 @@
 --  pends an FPU-using interrupt a thousand times and runs a chain of its
 --  own. Every result must equal the one computed without any switch, and
 --  every callee-saved register must come back from every delay unchanged.
+--  Then the asynchronous half (Spinner): live values in all of d0-d15
+--  across preemptions by a task and by an FPU-using interrupt.
 
 with Ada.Real_Time; use Ada.Real_Time;
 with Ada.Synchronous_Task_Control;
@@ -10,6 +12,7 @@ with Ada.Text_IO;
 with Interfaces; use Interfaces;
 
 with Chains;
+with Spinner;
 
 procedure Test is
    Main_X : Long_Float := 5.0;
@@ -41,5 +44,17 @@ begin
    Ada.Text_IO.Put_Line
      ("handler: served" & Unsigned_32'Image (Chains.Handler_Count)
       & " sum exact " & Boolean'Image (Chains.Handler_Sum = 125.0));
+
+   Spinner.Start_Timer;
+   Ada.Synchronous_Task_Control.Set_True (Spinner.Go_Poke);
+   Ada.Synchronous_Task_Control.Set_True (Spinner.Go_Spin);
+   Ada.Synchronous_Task_Control.Suspend_Until_True (Spinner.Done);
+   Spinner.Stop_Timer;
+   Ada.Text_IO.Put_Line
+     ("live d0-d15 kept across asynchronous preemptions: "
+      & Boolean'Image (Spinner.Rounds_Failed = 0));
+   Ada.Text_IO.Put_Line
+     ("preempted by the task more than 100 times: " & Boolean'Image (Spinner.Preemptions > 100)
+      & ", by the interrupt more than 1000: " & Boolean'Image (Spinner.Interrupts > 1000));
    Ada.Text_IO.Put_Line ("===TEST COMPLETE===");
 end Test;

@@ -3,12 +3,12 @@ import pytest
 
 
 def check_test_conditions(target_info: support.target_info.TargetInfo):
-    # The compiler's stack check is the light-tasking profile's addition (the family copies
-    # System.BB.Threads.Stack_Checking into it); embedded has its own.
+    # The compiler's stack check: light-tasking through the family's copy of
+    # System.BB.Threads.Stack_Checking, embedded through its own (the same unit).
     if target_info.target != "stm32h7xx":
         pytest.skip(f"Test requires target 'stm32h7xx'")
-    if target_info.runtime_profile not in ("light-tasking", "light_tasking"):
-        pytest.skip(f"Test is for the light-tasking profile")
+    if not target_info.has_libgnarl:
+        pytest.skip(f"Test requires a runtime with libgnarl")
 
 
 def compiler_switches(target_info: support.target_info.TargetInfo):
@@ -25,4 +25,4 @@ def crate_config_values(target_info: support.target_info.TargetInfo):
 
 
 def source_dirs(target_info: support.target_info.TargetInfo):
-    return ["lch_light"]
+    return ["lch_embedded"] if target_info.runtime_profile == "embedded" else ["lch_light"]

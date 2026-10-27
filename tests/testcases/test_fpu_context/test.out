@@ -3,4 +3,6 @@ chain B exact: TRUE
 callee-saved FP registers kept across every switch: TRUE
 main chain exact: TRUE
 handler: served 1000 sum exact TRUE
+live d0-d15 kept across asynchronous preemptions: TRUE
+preempted by the task more than 100 times: TRUE, by the interrupt more than 1000: TRUE
 ===TEST COMPLETE===
