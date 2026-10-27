@@ -8,7 +8,7 @@ def check_test_conditions(target_info: support.target_info.TargetInfo):
     if not target_info.has_libgnarl:
         pytest.skip(f"Test requires a runtime with libgnarl")
     if target_info.runtime_profile != "light_tasking":
-        pytest.skip("light-tasking only: embedded floors the fault stack at 2 KB, light has no guard")
+        pytest.skip("light-tasking only: embedded floors the fault stack at 3 KB, light has no guard")
 
 
 def crate_config_values(target_info: support.target_info.TargetInfo):

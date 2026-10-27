@@ -3,7 +3,7 @@ import pytest
 
 
 def check_test_conditions(target_info: support.target_info.TargetInfo):
-    # Embedded's fault path runs in handler mode on the interrupt stack: the
+    # Embedded's fault path runs in handler mode on the fault stack: the
     # measurement is of that profile (light-tasking's handler is a direct call).
     if target_info.target != "stm32h7xx":
         pytest.skip(f"Test requires target 'stm32h7xx'")
