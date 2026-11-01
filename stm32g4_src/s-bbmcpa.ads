@@ -38,6 +38,8 @@ package System.BB.MCU_Parameters is
    pragma No_Elaboration_Code_All;
    pragma Preelaborate;
 
-   Number_Of_Interrupts : constant := 102;
+   Number_Of_Interrupts : constant := 101;
+   --  The last interrupt identifier, where System.BB.Parameters'
+   --  Interrupt_Range ends: these devices have 102 lines, 0 to 101.
 
 end System.BB.MCU_Parameters;
