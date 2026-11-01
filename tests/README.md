@@ -123,12 +123,17 @@ pytest . --target-board=rp2040 --target-if=jlink-gdbserver --gdbserver-port=2331
 1. Launch OpenOCD with the appropriate options for your debug interface and target,
    and configure OpenOCD to enable semihosting and redirect it via TCP
    For example, for the Nucleo-G474RE board (`stm32g4xx` target) with semihosting
-   output on port 4445:
+   output on port 4445. OpenOCD connects with the reset line asserted and halts
+   the core: a program that sleeps in WFI with the debug clock gated (the idle
+   loop of the tasking runtimes) cannot be examined otherwise ("Examination
+   failed").
 ```sh
 openocd \
     -f interface/stlink.cfg \
     -f target/stm32g4x.cfg \
+    -c "reset_config srst_only srst_nogate connect_assert_srst" \
     -c init \
+    -c "reset halt" \
     -c "arm semihosting enable" \
     -c "arm semihosting_redirect tcp 4445"
 ```
@@ -139,13 +144,13 @@ pytest . \
     --target-board=<target> \
     --target-if=openocd-gdbserver \
     --gdbserver-port=<gdb-port> \
-    --text-io-port<telnet-port>
+    --text-io-port=<semihosting-port>
 ```
 
 Where:
 * `<target>` is the name of the runtime target you want to test (e.g. `rp2040`)
 * `<gdb-port>` is OpenOCD's GDB server port number (port 3333 by default)
-* `<telnet-port>` is OpenOCD's semihosting port number (e.g. 4445)
+* `<semihosting-port>` is the TCP port OpenOCD redirects semihosting to (e.g. 4445)
 
 For example, to test on the stm32g4xx (Nucleo-G474RE board):
 
