@@ -79,6 +79,7 @@ class GdbTargetInterface:
             text output from the target program.
         """
         self.terminal_io_port = terminal_io_port
+        self.executable_file = executable_file
 
         gdb_path = find_gdb(runtime_crate_dir, "arm-eabi")
 
@@ -267,6 +268,19 @@ class OpenOcdInterface(GdbTargetInterface):
 
     def reset(self):
         self.monitor_command("reset halt")
+
+    def load(self, timeout_sec=30.0):
+        # A GDB built without XML support (e.g. the Windows build of the
+        # gnat_arm_elf toolchain) cannot read OpenOCD's memory map, so GDB's
+        # own "load" writes flash with plain memory writes, which report
+        # success but never reach the flash. Let OpenOCD program the flash
+        # itself instead.
+        path = str(self.executable_file.absolute()).replace("\\", "/")
+        # The target must be halted for the flash write
+        self.monitor_command("reset halt")
+        self.monitor_command(
+            f"flash write_image erase {{{path}}}", timeout_sec=timeout_sec
+        )
 
 
 class StUtilInterface(GdbTargetInterface):
