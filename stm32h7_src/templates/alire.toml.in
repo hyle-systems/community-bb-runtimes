@@ -1,0 +1,169 @@
+# The Alire manifest of each generated crate. patch-runtime.py fills in
+# the profile, the target, the version and the project files.
+
+name = "$(profile_underscored)_$(target)"
+description = "$(profile) runtime for the STM32H72x/H73x line (RM0468)"
+version = "$(version)"
+
+long-description = """
+## Usage
+
+First edit your `alire.toml` file and add the following elements:
+ - Add `$(profile_underscored)_$(target)` in the dependency list:
+   ```toml
+   [[depends-on]]
+   $(profile_underscored)_$(target) = "*"
+   ```
+ - if applicable, apply any runtime configuration variables (see below).
+
+Then edit your project file to add the following elements:
+ - "with" the run-time project files. With this, gprbuild will compile the run-time before your application
+   ```ada
+$(project_file_withs)
+   ```
+ - Specify the `Target` and `Runtime` attributes:
+   ```ada
+      for Target use runtime_build'Target;
+      for Runtime ("Ada") use runtime_build'Runtime ("Ada");
+   ```
+ - specify the `Linker` switches:
+   ```ada
+   package Linker is
+     for Switches ("Ada") use Runtime_Build.Linker_Switches;
+   end Linker;
+   ```
+
+The runtime is configurable via Alire crate configuration variables; the
+family's README
+(https://github.com/damaki/community-bb-runtimes/blob/main/stm32h7_src/README.md)
+describes each one, the memory map, the fault handling and the tests behind
+every claim.
+
+By default, the runtime is configured for the STM32H723ZG on the NUCLEO-H723ZG
+board: an 8 MHz external clock on the HSE input (from the on-board ST-LINK, so
+`HSE_Bypass = true`), PLL1 multiplying it by 65 to a 520 MHz CPU clock at
+voltage scaling VOS0, the AXI/AHB clock at 260 MHz and the APB clocks at
+130 MHz. If you are using a different MCU of the STM32H723/725/730/733/735
+line, or a board with a crystal, configure the runtime in your `alire.toml`.
+For example, for an STM32H733VG with a 25 MHz crystal:
+```toml
+[configuration.values]
+$(profile_underscored)_$(target).MCU_Sub_Family        = "H733"
+$(profile_underscored)_$(target).MCU_Flash_Memory_Size = "G"
+$(profile_underscored)_$(target).HSE_Clock_Frequency   = 25000000
+$(profile_underscored)_$(target).HSE_Bypass            = false
+$(profile_underscored)_$(target).PLL_M_Div             = 5
+$(profile_underscored)_$(target).PLL_N_Mul             = 104
+$(profile_underscored)_$(target).PLL_P_Div             = 1
+```
+
+The runtime refuses at compile time a configuration that breaks a limit of the
+chip: the PLL1 input (1 .. 16 MHz after the M divider), the VCO (192 .. 836 MHz
+wide, 150 .. 420 MHz medium), an odd P divider other than 1, the CPU, AXI/AHB
+and APB maxima of the selected voltage scaling (520 / 275 / 137.5 MHz at VOS0),
+a CPU clock below 1 MHz on the tasking runtimes. The flash wait states follow
+RM0468 Table 16. VOS0 limits the junction temperature to 105 C (DS13313
+Table 13). The runtime sets up the supply, the voltage scaling, PLL1 and the
+domain prescalers only: PLL2, PLL3 and every peripheral kernel clock (the FDCAN
+kernel clock is the HSE after reset) are the application's.
+
+`Supply_Configuration` is the board's core-supply arrangement, RM0468 Table 30:
+`LDO` (the default: the NUCLEO-H723ZG and every part without the SMPS
+step-down converter), `SMPS`, `SMPS_1V8_Supplies_LDO`, `SMPS_2V5_Supplies_LDO`,
+`SMPS_1V8_Supplies_External_And_LDO`, `SMPS_2V5_Supplies_External_And_LDO`,
+`SMPS_1V8_Supplies_External_LDO_Bypass`, `SMPS_2V5_Supplies_External_LDO_Bypass`,
+`Bypass`. The register is write-once until a power-on reset, and an arrangement
+the board is not wired for leaves the core unsupplied until one: read the
+board's schematic before changing it.
+
+Memory: the runtime's data, stacks and heap live in the DTCM, which DMA1,
+DMA2 and the BDMA cannot reach. A DMA buffer goes, through `Linker_Section`, in
+`.axisram` (AXI SRAM, initial values copied at start-up) or `.axisram_bss`
+(zero, not stored in the flash), `.sram12` (SRAM1/SRAM2) or `.sram4` (SRAM4,
+the BDMA's), whose initial values the start-up copies too, or their `_noinit`
+variants, which it leaves untouched. All of them are cacheable: align a DMA
+buffer to 32 bytes, size it in multiples of 32, and clean or invalidate the
+cache around transfers (errata ES0491 2.1.4: a barrier after the maintenance),
+or give it an MPU region of its own.
+
+Faults: NMI, hard, memory-management, bus and usage faults are reported as
+Ada exceptions into the last-chance handler, on a fault stack of their own
+(`Fault_Stack_Size`, 4096 bytes by default; at least 3072 on embedded). The
+NMI is the weak name `__gnat_nmi_trap`, which an application may define.
+
+`Stack_Guard = true` (tasking runtimes) keeps an MPU no-access window of
+`Stack_Guard_Bytes` (128, 256 or 512) at the bottom of every stack,
+so that the first write past a stack's bottom is a memory-management fault. It
+uses MPU regions 12 to 15; an application uses 0 to 11. Every guarded stack
+must be at least four windows: the runtime checks the interrupt stack at
+compile time, the environment stack at link time and a task's at its first
+switch; a task's `Storage_Size` is the application's:
+```ada
+pragma Compile_Time_Error
+  ($(profile_underscored)_stm32h7xx_Config.Stack_Guard
+     and then My_Task_Stack_Size < 4 * $(profile_underscored)_stm32h7xx_Config.Stack_Guard_Bytes,
+   "My_Task's stack is smaller than four guard windows");
+```
+Size the window to the largest frame of code not compiled with `-fstack-check`,
+and no less than 128 bytes (the core's exception frame with the FPU in use).
+
+The main subprogram must not return: the start file then resets the board,
+also while library-level tasks still run. Without a debugger the default
+last-chance handler's output cannot be taken and the board is reset by the
+fault path; a deployed program installs its own handler and arms the
+independent watchdog.
+
+`Interrupt_Stack_Size` (4096 bytes by default, at least 1024), `Stack_Guard`
+and `Stack_Guard_Bytes` act in the tasking runtimes only; the light crate
+refuses them if set away from their defaults. The environment stack is set at
+link time with `-Wl,--defsym=__stack_size=<bytes>` (4096 by default).
+"""
+
+authors = ["AdaCore", "Daniel King"]
+maintainers = ["Daniel King <damaki.gh@gmail.com>"]
+maintainers-logins = ["damaki"]
+licenses = "GPL-3.0-or-later WITH GCC-exception-3.1"
+tags = ["embedded", "runtime", "stm32h7"]
+website = "https://github.com/damaki/community-bb-runtimes"
+
+project-files = $(project_files_list)
+
+[configuration]
+generate_c = false
+output_dir = "gnat_user"
+
+[configuration.variables]
+MCU_Sub_Family = { type = "Enum", values = ["H723", "H725", "H730", "H733", "H735"], default = "H723" }
+MCU_Flash_Memory_Size = { type = "Enum", values = ["B", "E", "G"], default = "G" }
+
+HSE_Clock_Frequency = { type = "Integer", first = 4000000, last = 50000000, default = 8000000 }
+HSE_Bypass = { type = "Boolean", default = true }
+HSI_Div = { type = "Enum", values = ["DIV1", "DIV2", "DIV4", "DIV8"], default = "DIV1" }
+
+PLL_Src = { type = "Enum", values = ["HSE", "HSI"], default = "HSE" }
+PLL_M_Div = { type = "Integer", first = 1, last = 63, default = 1 }
+PLL_N_Mul = { type = "Integer", first = 4, last = 512, default = 65 }
+PLL_P_Div = { type = "Integer", first = 1, last = 128, default = 1 }
+PLL_Q_Div = { type = "Integer", first = 1, last = 128, default = 4 }
+PLL_R_Div = { type = "Integer", first = 1, last = 128, default = 2 }
+PLL_Q_Enable = { type = "Boolean", default = false }
+PLL_R_Enable = { type = "Boolean", default = false }
+
+SYSCLK_Src = { type = "Enum", values = ["HSI", "CSI", "HSE", "PLL1"], default = "PLL1" }
+Voltage_Scaling = { type = "Enum", values = ["VOS0", "VOS1", "VOS2", "VOS3"], default = "VOS0" }
+
+D1CPRE = { type = "Enum", values = ["DIV1", "DIV2", "DIV4", "DIV8", "DIV16", "DIV64", "DIV128", "DIV256", "DIV512"], default = "DIV1" }
+HPRE = { type = "Enum", values = ["DIV1", "DIV2", "DIV4", "DIV8", "DIV16", "DIV64", "DIV128", "DIV256", "DIV512"], default = "DIV2" }
+D1PPRE = { type = "Enum", values = ["DIV1", "DIV2", "DIV4", "DIV8", "DIV16"], default = "DIV2" }
+D2PPRE1 = { type = "Enum", values = ["DIV1", "DIV2", "DIV4", "DIV8", "DIV16"], default = "DIV2" }
+D2PPRE2 = { type = "Enum", values = ["DIV1", "DIV2", "DIV4", "DIV8", "DIV16"], default = "DIV2" }
+D3PPRE = { type = "Enum", values = ["DIV1", "DIV2", "DIV4", "DIV8", "DIV16"], default = "DIV2" }
+
+Supply_Configuration = { type = "Enum", values = ["LDO", "SMPS", "SMPS_1V8_Supplies_LDO", "SMPS_2V5_Supplies_LDO", "SMPS_1V8_Supplies_External_And_LDO", "SMPS_2V5_Supplies_External_And_LDO", "SMPS_1V8_Supplies_External_LDO_Bypass", "SMPS_2V5_Supplies_External_LDO_Bypass", "Bypass"], default = "LDO" }
+Interrupt_Stack_Size = { type = "Integer", first = 1024, default = 4096 }
+Fault_Stack_Size = { type = "Integer", first = 512, default = 4096 }
+Stack_Guard = { type = "Boolean", default = false }
+Stack_Guard_Bytes = { type = "Integer", first = 128, last = 512, default = 128 }
+
+[[depends-on]]
+gnat_arm_elf = "^16"

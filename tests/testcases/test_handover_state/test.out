@@ -1,0 +1,13 @@
+first pass: TIMPRE set, an MPU region over unused SRAM4 and the MPU on, then the hand-over
+second pass, after a hand-over with TIMPRE set and the MPU on
+TIMPRE at its reset value: TRUE
+MPU off, the guard being off: TRUE
+every region disabled, not only the MPU: TRUE
+lazy floating-point stacking re-established: TRUE
+on the environment stack, not the bootloader's, BASEPRI at zero: TRUE
+interrupts unmasked, the bootloader having jumped with PRIMASK set: TRUE
+faults unmasked, the bootloader having set FAULTMASK: TRUE
+no deep sleep selected (SCR at reset): TRUE
+floating-point defaults at reset (FPDSCR): TRUE
+no unaligned-access trap, bus faults not ignored (CCR): TRUE
+===TEST COMPLETE===

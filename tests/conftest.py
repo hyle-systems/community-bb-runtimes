@@ -1,8 +1,20 @@
 import pytest
+import support.harnesses
 import support.target_interface
 
 
+def pytest_configure(config):
+    support.harnesses.PRIVATE_RUNTIME_BUILDS = config.getoption("--private-runtime-builds")
+
+
 def pytest_addoption(parser):
+    parser.addoption(
+        "--private-runtime-builds",
+        action="store_true",
+        help="Also run the tests that rebuild a private copy of the runtime crate (about 45 s each): "
+        "testcases that set the runtime's configuration values and the configured rows of "
+        "test_negative_builds.py. Without it they are skipped",
+    )
     parser.addoption(
         "--target-if",
         action="store",

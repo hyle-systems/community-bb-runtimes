@@ -1,0 +1,201 @@
+"""Board-less build checks of the stm32h7xx crates: configurations the crates must refuse, with the expected
+message, and configurations that must build.
+
+Run from tests/ with ``pytest test_negative_builds.py --private-runtime-builds`` after
+``../generate-runtimes.sh --target stm32h7xx``, but not while the on-target runner is building against the same
+crates. A row with configuration values takes about 45 s, since it rebuilds a private copy of the runtime (72 rows
+took 54 minutes), and without --private-runtime-builds it is skipped. A row without values takes a few seconds and
+always runs.
+"""
+import pathlib
+import shutil
+import subprocess
+
+import pytest
+
+from support.harnesses import TestHarness
+from support.target_info import TargetInfo
+
+REPO = pathlib.Path(__file__).resolve().parent.parent
+INSTALL = REPO / "install"
+TESTCASES = REPO / "tests" / "testcases"
+
+# A row is (profile, configuration values, expected error[, linker switches[, testcase[, gprbuild arguments]]]):
+# the testcase (default hello_world) built against the generated crate with the values, {crate} in a switch for
+# the runtime crate's directory, the gprbuild arguments after "--" (e.g. -XLOADER=USER). The expected error is a
+# fragment of the build output, or None for a row that must build; the first row is the positive control.
+#
+# The refusals come from the crate's compile-time checks (s-bbpara.ads for the options, setup_pll.adb for the
+# clock tree, s-bbcppr.adb for the guard window) or, for a value outside the manifest's range or enumeration,
+# from Alire's validation of the configuration. The rows say which.
+ROWS = [
+    ("light", {}, None),
+    # The clock tree's own checks (DS13313 Tables 12 and 39-40, RM0468 Table 16 and 8.7.11)
+    ("light", {"PLL_M_Div": 16}, "between 1 and 16 MHz"),                        # 0.5 MHz into the PLL
+    ("light", {"PLL_N_Mul": 10}, "VCO must be 192 .. 836 MHz"),                                           # VCO 80 MHz, below both ranges
+    ("light", {"PLL_P_Div": 3}, "must be 1 or even"),
+    ("light", {"PLL_N_Mul": 69}, "CPU clock above the maximum"),                   # 552 MHz: the boost point is unsupported
+    ("light", {"Voltage_Scaling": "VOS1"}, "CPU clock above the maximum"),         # 520 MHz at scale 1
+    ("light", {"HPRE": "DIV1"}, "AXI/AHB clock above the maximum"),                # 520 MHz on the AXI
+    ("light", {"D2PPRE1": "DIV1"}, "APB clock is above half"),                     # 260 MHz on APB1
+    ("light", {"D1PPRE": "DIV1"}, "APB clock is above half"),                      # 260 MHz on APB3
+    ("light", {"D3PPRE": "DIV1"}, "APB clock is above half"),                      # 260 MHz on APB4
+    # The input range is coupled to the VCO range (DS13313 Table 39: wide 2-16 MHz; Table 40: medium 1-2 MHz)
+    ("light", {"PLL_M_Div": 8, "PLL_N_Mul": 400}, "medium range"),   # 1 MHz in selects the medium range: VCO 400 MHz is in it, but P out 400 MHz is above its 210 MHz
+    ("light", {"PLL_N_Mul": 20}, "wide range"),                      # 8 MHz in selects the wide range: VCO 160 MHz is below its 192 MHz
+    ("light", {"PLL_M_Div": 8, "PLL_N_Mul": 100}, "medium range"),    # 1 MHz in selects the medium range: VCO 100 MHz is below its 150 MHz
+    # The PLL1 P output has its own ceiling (DS13313 Table 39: 550/400/300/170 MHz per VOS, 520 at VOS0 as the CPU's),
+    # which D1CPRE does not lift. VOS3, N = 85, P = 2 and D1CPRE = 2 give a 170 MHz CPU from a 340 MHz P output.
+    ("light", {"Voltage_Scaling": "VOS3", "PLL_N_Mul": 85, "PLL_P_Div": 2, "D1CPRE": "DIV2", "HPRE": "DIV2"}, "PLL1 P output above"),
+    ("light", {"Voltage_Scaling": "VOS3", "PLL_N_Mul": 85, "PLL_P_Div": 4, "HPRE": "DIV2"}, None),   # P out 170: builds
+    # Exactly 2 MHz of PLL1 input is in both VCO ranges' tables, and RM0468 8.5.5 claims it for both. The crate
+    # runs it in the wide range, as ST's CubeH7 template does; only an input below 2 MHz selects the medium range.
+    # M = 4 divides the 8 MHz HSE down to 2 MHz.
+    ("light", {"PLL_M_Div": 4, "PLL_N_Mul": 200}, None),   # VCO 400 MHz, P out 400 MHz: builds
+    ("light", {"PLL_M_Div": 4, "PLL_N_Mul": 100}, None),   # 200 MHz: builds, VCO 200 MHz at the wide range's floor
+    # The guard-size option
+    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 192}, "Stack_Guard_Bytes must be 128, 256 or 512"),
+    # 64 bytes is below the core's exception frame with the FPU; Alire refuses it against the manifest's first = 128
+    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 64}, "Stack_Guard_Bytes : Integer range 128 .. 512"),
+    # The guard's options mean nothing in the light profile, so the light crate must refuse them. The values are
+    # valid, so that the light crate's own refusal is what fails the build.
+    ("light", {"Stack_Guard": True}, "have no effect in the light profile"),
+    ("light", {"Stack_Guard_Bytes": 256}, "have no effect in the light profile"),
+    # Every guarded stack is at least four times the window (the window sits inside the stack at its bottom)
+    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 512, "Interrupt_Stack_Size": 1024}, "four times"),   # a 1 KB interrupt stack against a 512-byte window
+    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 256, "Interrupt_Stack_Size": 1024}, None),   # exactly four times: builds
+    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 512, "Interrupt_Stack_Size": 4096},
+     "environment stack smaller than four guard windows", ["-Wl,--defsym=__stack_size=1536"]),  # a 1.5 KB environment stack against a 512-byte window: the linker refuses
+    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 512, "Interrupt_Stack_Size": 4096},
+     None, ["-Wl,--defsym=__stack_size=2048"]),                                       # exactly four windows: links
+    # The supply configuration (RM0468 Table 30). Every value must build on a part with the converter (the H725),
+    # though only LDO can run on the NUCLEO-H723ZG.
+    ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS"}, None),
+    ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_1V8_Supplies_LDO"}, "2.5 V"),   # at VOS0 (the default) a converter feeding the LDO must output 2.5 V, DS13311 Table 14
+    ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_2V5_Supplies_LDO"}, None),
+    ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_1V8_Supplies_External_And_LDO"}, "2.5 V"),
+    ("light", {"MCU_Sub_Family": "H725", "Voltage_Scaling": "VOS1", "PLL_N_Mul": 50, "Supply_Configuration": "SMPS_1V8_Supplies_LDO"}, None),   # 1.8 V into the LDO is listed from VOS1 down
+    ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_2V5_Supplies_External_And_LDO"}, None),
+    ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_1V8_Supplies_External_LDO_Bypass"}, None),
+    ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "SMPS_2V5_Supplies_External_LDO_Bypass"}, None),
+    ("light", {"MCU_Sub_Family": "H725", "Supply_Configuration": "Bypass"}, None),
+    ("light", {"Supply_Configuration": "Foo"}, "Invalid value from 'light_stm32h7xx' for type Config type: Supply_Configuration : Enum"),  # Alire refuses an unknown value against the manifest's enumeration (the message is Alire's, not the runtime's)
+    # The 128 KB and 512 KB flash maps must link a small program
+    ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "B"}, None),   # the one part with 128 KB
+    ("light", {"MCU_Flash_Memory_Size": "E"}, None),
+    # The interrupt stack is 4096 bytes by default and at least 1024, the manifest's floor. The embedded rows at 1024
+    # and 2048 build because a fault's handling runs on the fault stack, not on this one.
+    ("embedded", {"Interrupt_Stack_Size": 1024}, None),
+    ("embedded", {"Stack_Guard": True, "Stack_Guard_Bytes": 256, "Interrupt_Stack_Size": 2048}, None),
+    ("embedded", {"Stack_Guard": True, "Stack_Guard_Bytes": 256, "Interrupt_Stack_Size": 2304}, None),
+    ("light-tasking", {"Interrupt_Stack_Size": 1024}, None),
+    ("light", {"Interrupt_Stack_Size": 1024}, "have no effect in the light profile"),                                                                # not the default, so the light crate refuses it
+    # Every fault's handling runs on the fault stack (Fault_Stack_Size, 4096 by default). The embedded crate refuses
+    # less than 3072: the fault path alone measured 1792 bytes, and 2048 with a handler that allocates as the default
+    # one does (test_fault_stack_use, test_fault_stack_use_alloc), so the floor holds the default handler with half
+    # again. The light crate accepts the option, since its faults are routed too.
+    ("embedded", {"Fault_Stack_Size": 1024}, "at least 3072 bytes"),
+    ("embedded", {"Fault_Stack_Size": 2048}, "at least 3072 bytes"),
+    ("embedded", {"Fault_Stack_Size": 3072}, None),
+    ("light", {"Fault_Stack_Size": 1024}, None),
+    # A program larger than the 128 KB map (192 KB of constants) fails at the link with a region overflow,
+    # and links against the default map
+    ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "B"}, "`flash' overflowed", [], "big_program"),
+    ("light", {}, None, [], "big_program"),
+    # The idle task's 2 KB stack (the runtime's own, 8-aligned) bounds the window at 512 bytes. A 1 KB window rounded
+    # up inside it can leave eight bytes of stack.
+    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 1024}, "Stack_Guard_Bytes : Integer range 128 .. 512"),   # refused by Alire against the manifest's last = 512 (its message, not the runtime's)
+    ("light-tasking", {"Stack_Guard": True, "Stack_Guard_Bytes": 512}, None),
+    # Parts without a step-down converter refuse the SMPS arrangements (an invalid PWR_CR3 byte is ignored and locks
+    # the register until a power cycle, RM0468 6.8.4). The H725 and H735 have the converter; the H730 exists both ways.
+    ("light", {"MCU_Sub_Family": "H723", "Supply_Configuration": "SMPS"}, "has no SMPS"),
+    ("light", {"MCU_Sub_Family": "H733", "Supply_Configuration": "SMPS_1V8_Supplies_LDO"}, "has no SMPS"),
+    ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "B", "Supply_Configuration": "SMPS_2V5_Supplies_External_LDO_Bypass"}, None),
+    ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "B", "Supply_Configuration": "LDO"}, None),
+    ("light", {"MCU_Sub_Family": "H735", "Supply_Configuration": "Bypass"}, None),
+    # The flash size follows the part: 128 KB only on the H730, 1 MB only on the H733 and H735, 512 KB or 1 MB on the
+    # H723 and H725
+    ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "G"}, "does not exist on this part"),
+    ("light", {"MCU_Sub_Family": "H735", "MCU_Flash_Memory_Size": "E"}, "does not exist on this part"),
+    ("light", {"MCU_Sub_Family": "H725", "MCU_Flash_Memory_Size": "E"}, None),
+    ("light", {"MCU_Sub_Family": "H733"}, None),   # hello_world on every sub-family: H733 (G, no converter)
+    ("embedded", {"MCU_Sub_Family": "H735"}, None),   # and H735 (G, converter); H723, H725 and H730 have rows above
+    # ST's own 520 MHz point for the NUCLEO-H723ZG (the CubeH7 template): M = 4 and N = 260 put 2 MHz into the wide
+    # VCO, which runs at 520 MHz
+    ("light", {"PLL_M_Div": 4, "PLL_N_Mul": 260}, None),
+    # The Q and R outputs have the P output's ceiling in the wide range too (DS13313 Table 39). With the VCO at
+    # 400 MHz at VOS2, P at 200 MHz is within it and Q at 400 MHz is above 300.
+    ("light", {"Voltage_Scaling": "VOS2", "PLL_N_Mul": 50, "PLL_P_Div": 2, "PLL_Q_Enable": True, "PLL_Q_Div": 1}, "Q output above"),
+    # The same with R at 400 MHz
+    ("light", {"Voltage_Scaling": "VOS2", "PLL_N_Mul": 50, "PLL_P_Div": 2, "PLL_R_Enable": True, "PLL_R_Div": 1}, "or the R output"),
+    # A crystal is 4 to 48 MHz (RM0468 8.5); 50 MHz is for an external clock in bypass
+    ("light", {"HSE_Bypass": False, "HSE_Clock_Frequency": 50000000, "PLL_M_Div": 5, "PLL_N_Mul": 52}, "crystal"),
+    ("light", {"HSE_Bypass": False, "HSE_Clock_Frequency": 48000000, "PLL_M_Div": 6, "PLL_N_Mul": 65}, None),
+    # The interrupt stack has a floor of 1 KB: the tick's handler and the scheduler run there
+    ("light-tasking", {"Interrupt_Stack_Size": 64}, "Interrupt_Stack_Size : Integer range 1024"),   # the manifest's floor, refused by Alire (the runtime's floor stays behind it)
+    # A user linker script (LOADER=USER) links with the crate's own scripts named by hand. The three link-time
+    # symbols must come from the crate in every loader case.
+    ("light", {}, None, ["-L{crate}/ld", "-L{crate}/ld/flash-1024", "-L{crate}/ld/ram-h72x", "-Tcommon-ROM.ld",
+      "-Wl,--no-warn-rwx-segments"],   # the crate adds this switch for ROM and RAM; a user script adds it itself
+     "hello_world", ["-XLOADER=USER"]),
+    # The P-output ceilings bind the P output only when it is used. With SYSCLK from the crystal and only the Q
+    # output on, the VCO may run high at PLL_P_Div = 1 (DIVP1EN = 0): in the wide range, then in the medium one.
+    ("light", {"SYSCLK_Src": "HSE", "PLL_Q_Enable": True, "PLL_N_Mul": 104, "PLL_P_Div": 1}, None),   # P nominally 832 MHz, Q 208
+    ("light", {"SYSCLK_Src": "HSE", "PLL_Q_Enable": True, "PLL_M_Div": 8, "PLL_N_Mul": 400, "PLL_P_Div": 1}, None),   # P nominally 400, Q 100
+    # An initialised .axisram beyond what the start-up's copy loop can count (upstream's start-rom.S loads the word
+    # count with one movw: 65 535 words, 256 KB) must be refused at the link. Below that the program links.
+    ("light", {}, "initialised .axisram above 256 KB", [], "big_axisram"),
+    ("light", {}, None, [], "big_axisram_ok"),
+    # The load images of .data and .axisram take their addresses from expressions, which ld never checks against
+    # the flash region. 200 KB of initial values must be refused on the 128 KB map.
+    ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "B"}, "initial values exceed the flash", [], "big_axisram_ok"),
+    # A zero-only buffer in .axisram_bss takes no flash: 200 KB of it links on the 128 KB map
+    ("light", {"MCU_Sub_Family": "H730", "MCU_Flash_Memory_Size": "B"}, None, [], "big_axisram_bss"),
+    # The tasking runtimes' 1 ms tick needs a CPU clock of at least 1 MHz; the CSI divided by 512 (7.8 kHz) would
+    # give a 7-cycle tick. The light crate has no tick and accepts it.
+    ("light-tasking", {"SYSCLK_Src": "CSI", "D1CPRE": "DIV512"}, "below 1 MHz"),
+    ("light", {"SYSCLK_Src": "CSI", "D1CPRE": "DIV512"}, None),
+    # The PLL input's range is checked exactly: 48 000 002 Hz / 3 is 16 000 000.67 Hz, above 16 MHz, though it
+    # truncates to 16 MHz.
+    ("light", {"HSE_Clock_Frequency": 48000002, "PLL_M_Div": 3, "PLL_N_Mul": 30}, "between 1 and 16 MHz"),
+]
+
+
+def row_id(row):
+    """Return the row's pytest id. It starts with the target so that the CI's Windows
+    per-target job (``-k "not execute_on_target and stm32h7xx"``) selects the table."""
+    profile, values, expected = row[:3]
+    return ("stm32h7xx:" + profile + ":" + (",".join(f"{k}={v}" for k, v in values.items()) or "default")
+            + (":" + ",".join(row[3]) if len(row) > 3 and row[3] else "")
+            + (":" + row[4] if len(row) > 4 else "") + (":" + " ".join(row[5]) if len(row) > 5 else "")
+            + (":builds" if expected is None else ""))
+
+
+@pytest.mark.parametrize("row", ROWS, ids=row_id)
+def test_negative_build(row, tmp_path):
+    profile, values, expected = row[:3]
+    switches = row[3] if len(row) > 3 else []
+    testcase = TESTCASES / (row[4] if len(row) > 4 else "hello_world")
+    build_args = row[5] if len(row) > 5 else []
+    crate_dir = INSTALL / f"{profile}-stm32h7xx"
+    if not INSTALL.is_dir():
+        pytest.skip("no runtimes generated in install/")
+    assert crate_dir.is_dir(), f"the generator did not produce {crate_dir.name}"
+    if shutil.which("alr") is None:
+        pytest.skip("alr not on PATH")
+    target_info = TargetInfo(crate_dir, values, private_runtime_crate=bool(values))
+    working_dir = tmp_path / "crate"
+    harness = TestHarness(testcase, working_dir, target_info)
+    if switches:
+        own = harness.linker_switches
+        switches = [sw.replace("{crate}", crate_dir.resolve().as_posix()) for sw in switches]
+        harness.linker_switches = lambda: own() + switches
+    harness.setup()
+    r = subprocess.run(["alr", "build"] + (["--"] + build_args if build_args else []),
+                       cwd=working_dir, capture_output=True, text=True, errors="replace")
+    output = r.stdout + r.stderr
+    if expected is None:
+        assert r.returncode == 0, "the build must succeed:\n" + output[-3000:]
+    else:
+        assert r.returncode != 0, f"the build must be refused ({expected}) but succeeded"
+        assert expected in output, f"refused, but not with the expected message ({expected}):\n" + output[-3000:]

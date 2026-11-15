@@ -1,0 +1,4 @@
+ITCM initialised as the option byte says: TRUE
+AXI SRAM initialised as the option byte says: TRUE
+the two sizes sum to 384 KB: TRUE
+===TEST COMPLETE===

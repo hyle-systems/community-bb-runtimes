@@ -2,11 +2,14 @@ import os
 import pathlib
 import pygdbmi.constants
 import pygdbmi.gdbcontroller
+import queue
 import select
 import shutil
 import signal
+import struct
 import socket
 import subprocess
+import threading
 import time
 from typing import Optional
 
@@ -49,6 +52,15 @@ def find_gdb(crate_dir: pathlib.Path, target_triplet: str) -> pathlib.Path:
     return None if path is None else pathlib.Path(path)
 
 
+class GdbCommandError(RuntimeError):
+    """
+    Raised when GDB answers a command with ^error, e.g. a monitor command
+    the server refused (a failed flash write, a load_image of a wrong path)
+    or a download that did not happen. Without it the test would go on and
+    run whatever was already in flash.
+    """
+
+
 class GdbTargetInterface:
     """
     Interfaces with the target via GDB
@@ -79,35 +91,46 @@ class GdbTargetInterface:
             text output from the target program.
         """
         self.terminal_io_port = terminal_io_port
+        self.executable_file = executable_file
 
-        gdb_path = find_gdb(runtime_crate_dir, "arm-eabi")
+        self.gdb = None
+        self.terminal_socket = None
+        try:
+            gdb_path = find_gdb(runtime_crate_dir, "arm-eabi")
 
-        if gdb_path is None:
-            raise FileNotFoundError(
-                f"Failed to find GDB in Alire environment for {runtime_crate_dir.name}"
+            if gdb_path is None:
+                raise FileNotFoundError(
+                    f"Failed to find GDB in Alire environment for {runtime_crate_dir.name}"
+                )
+
+            self.gdb = pygdbmi.gdbcontroller.GdbController(
+                [str(gdb_path), "--interpreter=mi2", str(executable_file.absolute())]
             )
 
-        self.gdb = pygdbmi.gdbcontroller.GdbController(
-            [str(gdb_path), "--interpreter=mi2", str(executable_file.absolute())]
-        )
+            # Clear any opening messages sent by GDB
+            self.gdb.get_gdb_response(raise_error_on_timeout=False)
 
-        # Clear any opening messages sent by GDB
-        self.gdb.get_gdb_response(raise_error_on_timeout=False)
+            # Connect to the GDB server
+            self._write(
+                f"-target-select extended-remote :{gdbserver_port}", read_response=False
+            )
+            self._wait_for_result(timeout_sec=5.0)
 
-        # Connect to the GDB server
-        self._write(
-            f"-target-select extended-remote :{gdbserver_port}", read_response=False
-        )
-        self._wait_for_result(timeout_sec=5.0)
+            self.enable_semihosting()
 
-        self.enable_semihosting()
-
-        if terminal_io_port is None:
-            self.terminal_socket = None
-        else:
-            self.terminal_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.terminal_socket.connect(("localhost", terminal_io_port))
-            self.terminal_socket.setblocking(False)
+            if terminal_io_port is None:
+                self.terminal_socket = None
+            else:
+                self.terminal_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.terminal_socket.connect(("localhost", terminal_io_port))
+                self.terminal_socket.setblocking(False)
+        except BaseException:
+            # A `with` block's clean-up never runs for a constructor that
+            # raised, so the debugger would stay alive holding the ELF. On
+            # Windows the removal of the temporary directory then fails with a
+            # permission error that hides the cause.
+            self.shutdown()
+            raise
 
     def __enter__(self):
         return self
@@ -119,7 +142,8 @@ class GdbTargetInterface:
         """Gracefully shut down the GDB session"""
         if self.terminal_socket is not None:
             self.terminal_socket.close()
-        self.gdb.exit()
+        if self.gdb is not None:
+            self.gdb.exit()
 
     def load(self, timeout_sec=30.0):
         """Load the executable onto the target"""
@@ -139,7 +163,7 @@ class GdbTargetInterface:
     ):
         """Send a command to the remote monitor"""
         self._write(f'-interpreter-exec console "monitor {cmd}"', read_response=False)
-        self._wait_for_result()
+        self._wait_for_result(timeout_sec=timeout_sec)
 
     def read_io(self, timeout=5.0):
         """Read semihosting data from the target"""
@@ -210,6 +234,10 @@ class GdbTargetInterface:
 
             for r in responses:
                 if r["type"] == "result":
+                    if r.get("message") == "error":
+                        payload = r.get("payload")
+                        msg = payload.get("msg", "") if isinstance(payload, dict) else str(payload)
+                        raise GdbCommandError(f"GDB command failed: {msg}")
                     return r
 
         raise pygdbmi.constants.GdbTimeoutError()
@@ -265,8 +293,57 @@ class OpenOcdInterface(GdbTargetInterface):
     def enable_semihosting(self):
         self.monitor_command("arm semihosting enable")
 
+    _ram_image = False
+
+    @staticmethod
+    def _load_segments(elf: pathlib.Path):
+        """Return the entry point of a little-endian ELF32 file and its
+        PT_LOAD segments with file contents, as (physical address, memory
+        size) pairs."""
+        data = elf.read_bytes()
+        assert data[:4] == b"\x7fELF" and data[4] == 1, "not an ELF32 file"
+        e_entry, e_phoff = struct.unpack_from("<II", data, 0x18)
+        e_phentsize, e_phnum = struct.unpack_from("<HH", data, 0x2A)
+        segments = []
+        for i in range(e_phnum):
+            off = e_phoff + i * e_phentsize
+            p_type, _, _, p_paddr, p_filesz, p_memsz = struct.unpack_from("<IIIIII", data, off)
+            if p_type == 1 and p_filesz > 0:  # PT_LOAD
+                segments.append((p_paddr, p_memsz))
+        return e_entry, segments
+
     def reset(self):
-        self.monitor_command("reset halt")
+        # load() has already positioned an image loaded into RAM. A reset
+        # here would boot the program in flash instead, and its start-up may
+        # overwrite the RAM that holds the image.
+        if not self._ram_image:
+            self.monitor_command("reset halt")
+
+    def load(self, timeout_sec=30.0):
+        # A GDB built without XML support (e.g. gnat_arm_elf's) cannot read
+        # OpenOCD's memory map, so its own "load" writes flash with plain
+        # memory writes, which OpenOCD silently drops: OpenOCD programs the
+        # flash itself instead. An image with every load segment in RAM goes
+        # in with load_image after a reset halt, then SP and PC are set from
+        # its vector table.
+        path = str(self.executable_file.absolute()).replace("\\", "/")
+        entry, segments = self._load_segments(self.executable_file)
+        self._ram_image = bool(segments) and all(a >= 0x2000_0000 for a, _ in segments)
+        if self._ram_image:
+            # The vector table starts the segment that holds the entry point
+            base = next(a for a, n in segments if a <= (entry & ~1) < a + n)
+            self.monitor_command("reset halt")
+            self.monitor_command(f"load_image {{{path}}}", timeout_sec=timeout_sec)
+            self.monitor_command(f"reg sp [mrw {base:#x}]")
+            self.monitor_command(f"reg pc [expr {{[mrw {base + 4:#x}] & 0xFFFFFFFE}}]")
+        else:
+            # The flash write needs a halted target. The runner starts OpenOCD
+            # with a reset halt, but a server that has been up for a while may
+            # not be halted.
+            self.monitor_command("reset halt")
+            self.monitor_command(
+                f"flash write_image erase {{{path}}}", timeout_sec=timeout_sec
+            )
 
 
 class StUtilInterface(GdbTargetInterface):
@@ -285,13 +362,19 @@ class StUtilInterface(GdbTargetInterface):
     ):
         self.stutil = subprocess.Popen(
             ["st-util", "-v0", "-p", str(gdbserver_port)],
-            stdout=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
         )
 
-        # Prevent read() from possibly blocking indefinitely
-        os.set_blocking(self.stutil.stderr.fileno(), False)
-        os.set_blocking(self.stutil.stdout.fileno(), False)
+        # Drain stderr (the semihosting data) on a background thread into a
+        # queue instead of polling the pipe with select(): on Windows select()
+        # only works on sockets, and a plain blocking read() could hang the
+        # test if the program stops printing.
+        self._stderr_queue: queue.Queue = queue.Queue()
+        self._stderr_thread = threading.Thread(
+            target=self._drain_stderr, name="st-util-stderr", daemon=True
+        )
+        self._stderr_thread.start()
 
         super(StUtilInterface, self).__init__(
             runtime_crate_dir=runtime_crate_dir,
@@ -304,12 +387,15 @@ class StUtilInterface(GdbTargetInterface):
         super(StUtilInterface, self).shutdown()
 
         # st-util should exit when the GDB connection is closed, so wait for it
-        # to exit. If it doesn't exit quickly, then kill it.
+        # to exit. If it doesn't exit quickly, then kill it. The stderr reader
+        # thread ends by itself once st-util closes the pipe.
         try:
-            self.stutil.communicate(timeout=1.0)
+            self.stutil.wait(timeout=1.0)
         except subprocess.TimeoutExpired:
             self.stutil.kill()
-            self.stutil.communicate()
+            self.stutil.wait()
+
+        self._stderr_thread.join(timeout=1.0)
 
     def enable_semihosting(self):
         self.monitor_command("semihosting enable")
@@ -317,12 +403,32 @@ class StUtilInterface(GdbTargetInterface):
     def reset(self):
         self.monitor_command("reset")
 
+    def _drain_stderr(self):
+        """Move everything st-util writes to stderr into the queue, then
+        close the pipe"""
+        with self.stutil.stderr:
+            while True:
+                data = self.stutil.stderr.read1(4096)
+                if not data:
+                    break
+                self._stderr_queue.put(data)
+
     def read_io(self, timeout=5.0):
-        # st-util prints semihosting data to stderr
-        ready = select.select([self.stutil.stderr.fileno()], [], [], timeout)
-        if ready[0]:
-            return self.stutil.stderr.read1()
-        else:
+        # st-util prints semihosting data to stderr; the reader thread queues it.
+        # With timeout=0 return everything that is already available, so that a
+        # "clear the buffer" read discards all of st-util's start-up chatter
+        # (e.g. libusb warnings) and not only its first chunk.
+        if timeout <= 0.0:
+            data = bytes()
+            while True:
+                try:
+                    data += self._stderr_queue.get_nowait()
+                except queue.Empty:
+                    return data
+
+        try:
+            return self._stderr_queue.get(timeout=timeout)
+        except queue.Empty:
             return bytes()
 
 

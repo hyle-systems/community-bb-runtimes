@@ -1,0 +1,48 @@
+--  Checks that the start-up leaves a valid ECC in every word of the AXI
+--  SRAM and the ITCM, zeroing both with 64-bit stores before the data cache
+--  is on: sub-word writes and read-backs in the last kilobyte of each,
+--  where the runtime's memory map places nothing, must raise no RAMECC
+--  flag. Without the zeroing they flag words unwritten since power-up
+--  (measured on the AXI SRAM: the monitor read 0x7).
+
+with Ada.Text_IO;
+with Interfaces; use Interfaces;
+with System;
+
+with ECC_Probe;
+
+procedure Test is
+   AXI_Last_KB  : constant System.Address := System'To_Address (16#2404_FC00#);
+   ITCM_Last_KB : constant System.Address := System'To_Address (16#0000_FC00#);
+   --  A reset keeps the SRAM's contents and ECC, so after one run the
+   --  monitors alone would pass on history. Every run leaves the last double
+   --  word of each region non-zero, and only the start-up's zeroing lets the
+   --  next run find it zero (the first run after a power cycle reads zero
+   --  either way). Being the last word, it also catches a zeroing that
+   --  stops short of the region's end.
+   AXI_Probe  : Unsigned_64 with Volatile, Import, Address => System'To_Address (16#2404_FFF8#);
+   ITCM_Probe : Unsigned_64 with Volatile, Import, Address => System'To_Address (16#0000_FFF8#);
+   AXI_Zero_At_Start  : constant Boolean := AXI_Probe = 0;
+   ITCM_Zero_At_Start : constant Boolean := ITCM_Probe = 0;
+begin
+   Ada.Text_IO.Put_Line ("probe words zero at start (zeroed by the start-up): AXI SRAM "
+                         & Boolean'Image (AXI_Zero_At_Start)
+                         & ", ITCM " & Boolean'Image (ITCM_Zero_At_Start));
+   ECC_Probe.Clear (ECC_Probe.D1_AXI_SRAM);
+   ECC_Probe.Clear (ECC_Probe.D1_ITCM);
+   ECC_Probe.Clear (ECC_Probe.D1_Shared);
+
+   ECC_Probe.Touch (AXI_Last_KB, 1024);
+   ECC_Probe.Clean_Data_Cache (AXI_Last_KB, 1024);
+   ECC_Probe.Touch (ITCM_Last_KB, 1024);
+
+   ECC_Probe.Report ("AXI SRAM monitor after sub-word writes", ECC_Probe.D1_AXI_SRAM);
+   ECC_Probe.Report ("ITCM monitor after sub-word writes", ECC_Probe.D1_ITCM);
+   ECC_Probe.Report ("shared AXI/ITCM monitor", ECC_Probe.D1_Shared);
+   --  For the next run (see AXI_Probe); the AXI line is cleaned to memory,
+   --  since the next start-up's invalidate would discard a dirty line.
+   AXI_Probe  := 16#5EED_0001_5EED_0001#;
+   ITCM_Probe := 16#5EED_0002_5EED_0002#;
+   ECC_Probe.Clean_Data_Cache (System'To_Address (16#2404_FFE0#), 32);
+   Ada.Text_IO.Put_Line ("===TEST COMPLETE===");
+end Test;

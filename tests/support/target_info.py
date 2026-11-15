@@ -39,6 +39,12 @@ def get_config_values(
     config_vars: Dict, updated_values: Dict[str, str]
 ) -> Dict[str, Any]:
     """Gets the set of configuration.values to apply in the test crate's Alire manifest"""
+    unknown = sorted(set(updated_values) - set(config_vars))
+    if unknown:
+        # Otherwise a value for an undeclared name is dropped and the default
+        # built: a misspelt key in a positive row of the negative table would
+        # pass for a configuration never compiled. Alire refuses them too.
+        raise ValueError(f"configuration values for variables the crate does not declare: {unknown}")
     return {
         var_name: (
             updated_values[var_name]
@@ -53,13 +59,24 @@ class TargetInfo:
     """Provides information about a specific runtime crate"""
 
     def __init__(
-        self, runtime_crate_dir: pathlib.Path, overridden_config_values: Dict[str, str]
+        self,
+        runtime_crate_dir: pathlib.Path,
+        overridden_config_values: Dict[str, str],
+        private_runtime_crate: bool = False,
     ):
         self._runtime_crate_dir = runtime_crate_dir
+        self._private_runtime_crate = private_runtime_crate
         self._configuration_variables = get_config_vars(runtime_crate_dir)
         self._configuration_values = get_config_values(
             self._configuration_variables, overridden_config_values
         )
+
+    @property
+    def private_runtime_crate(self) -> bool:
+        """Returns True if the test must be built against its own copy of the
+        runtime crate, rebuilt from scratch with these values (the negative
+        build table; see also TestHarness.private_runtime)."""
+        return self._private_runtime_crate
 
     @property
     def runtime_crate_dir(self) -> pathlib.Path:
@@ -101,6 +118,7 @@ class TargetInfo:
             "stm32g0xx",
             "stm32f0xx",
             "stm32f4xx",
+            "stm32h7xx",
             "rp2040",
             "rp2350",
             "nrf54l_app",

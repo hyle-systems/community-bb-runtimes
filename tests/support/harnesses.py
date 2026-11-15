@@ -6,7 +6,13 @@ import subprocess
 import sys
 from typing import Dict, List, Optional, Any
 
+import pytest
+
 import support.target_info
+
+# Set by conftest.py from pytest's --private-runtime-builds. Off, setup() skips a test that would rebuild a
+# private copy of the runtime crate.
+PRIVATE_RUNTIME_BUILDS = False
 
 
 class TestHarness:
@@ -45,12 +51,32 @@ class TestHarness:
 
     def build(self):
         """Invoke alr build on the test case"""
-        return subprocess.run(args=["alr", "build"], cwd=self._testcase_working_dir)
+        args = ["alr", "build"]
+        extra = self.build_args()
+        if extra:
+            args += ["--"] + extra
+        return subprocess.run(args=args, cwd=self._testcase_working_dir)
 
     def setup(self):
         """Setup the test harness"""
+        if self.private_runtime() and not PRIVATE_RUNTIME_BUILDS:
+            pytest.skip("rebuilds a private copy of the runtime crate (about 45 s): pass --private-runtime-builds")
         self._generate_gpr()
         self._generate_alire_manifest()
+
+    def has_core_checks(self) -> bool:
+        """True when the testcase's opt.py defines core_checks(): the state
+        the core must be in after the run, which only run_openocd_tests.py
+        checks."""
+        return self._opt_module is not None and hasattr(self._opt_module, "core_checks")
+
+    def private_runtime(self) -> bool:
+        """True when the test builds against its own copy of the runtime
+        crate: the testcase sets values for that crate, or the TargetInfo
+        asks for a copy (the rows of test_negative_builds.py)."""
+        name = self._target_info.runtime_crate_name
+        return self._target_info.private_runtime_crate or any(
+            k.startswith(name + ".") for k in self.crate_config_values())
 
     @property
     def executable_path(self) -> pathlib.Path:
@@ -117,6 +143,58 @@ class TestHarness:
 
         return self._opt_module.crate_config_values(self._target_info)
 
+    def io_timeout(self) -> float:
+        """
+        Call io_timeout() in the testcase's opt.py file, if it exists.
+
+        This returns the seconds the harness waits for the program's output to
+        reach the completion marker; a test that waits for a slow oscillator
+        asks for more than the default.
+        """
+        if self._opt_module is None or not hasattr(self._opt_module, "io_timeout"):
+            return 5.0
+
+        return float(self._opt_module.io_timeout(self._target_info))
+
+    def build_args(self) -> List[str]:
+        """
+        Call build_args() in the testcase's opt.py file, if it exists.
+
+        This returns a list of extra arguments for gprbuild (e.g. a scenario
+        variable such as -XLOADER=RAM).
+        """
+        if self._opt_module is None:
+            return []
+        if not hasattr(self._opt_module, "build_args"):
+            return []
+        return self._opt_module.build_args(self._target_info)
+
+    def compiler_switches(self) -> List[str]:
+        """
+        Call compiler_switches() in the testcase's opt.py file, if it exists.
+
+        This returns a list of extra Ada compiler switches for the test
+        program's own units (e.g. -fstack-check), not for the runtime.
+        """
+        if self._opt_module is None:
+            return []
+        if not hasattr(self._opt_module, "compiler_switches"):
+            return []
+        return self._opt_module.compiler_switches(self._target_info)
+
+    def linker_switches(self) -> List[str]:
+        """
+        Call linker_switches() in the testcase's opt.py file, if it exists.
+
+        This returns a list of extra linker switches for the test program
+        (e.g. a --defsym that sizes the environment stack).
+        """
+        if self._opt_module is None:
+            return []
+        if not hasattr(self._opt_module, "linker_switches"):
+            return []
+        return self._opt_module.linker_switches(self._target_info)
+
     def source_dirs(self) -> List[str]:
         """
         Call source_dirs() in the testcase's opt.py file, if it exists.
@@ -142,6 +220,16 @@ class TestHarness:
 
             source_dirs = [self._testcase_sources_dir.absolute()]
             source_dirs += [self._testcase_sources_dir / sd for sd in self.source_dirs()]
+            extra_linker_switches = "".join(f', "{sw}"' for sw in self.linker_switches())
+            # The test's last-chance handler keeps the default switches: one
+            # compiled with -fstack-check would re-raise from its own prologue
+            # when it is entered below the stack's limit.
+            compiler_package = (
+                "    package Compiler is\n"
+                "        for Switches (\"Ada\") use (" + ", ".join(f'"{sw}"' for sw in self.compiler_switches()) + ");\n"
+                "        for Switches (\"test_lch.adb\") use ();\n"
+                "    end Compiler;\n"
+                if self.compiler_switches() else "")
 
             f.write(
                 f"""
@@ -159,9 +247,9 @@ project Test is
 
     Runtime_Linker_Switches := {runtime_linker_switches};
 
-    package Linker is
+{compiler_package}    package Linker is
         for Switches ("Ada") use Runtime_Linker_Switches &
-          ("-Wl,--gc-sections", "-Wl,--fatal-warnings");
+          ("-Wl,--gc-sections", "-Wl,--fatal-warnings"{extra_linker_switches});
     end Linker;
 end Test;
 """
@@ -195,6 +283,23 @@ end Test;
 
         runtime_crate_name = self._target_info.runtime_crate_name
         runtime_crate_dir = self._target_info.runtime_crate_dir.absolute()
+
+        # A private copy, rebuilt from scratch: one installed crate shared
+        # across configurations is not reliable. Its units are recompiled, but
+        # its installed ALIs are not always refreshed in the same build, and
+        # the next test's binder reports "must be recompiled" (seen on
+        # stm32h7xx, for testcases and for embedded rows of the negative
+        # table). Every other test shares the installed crate, the rows of
+        # support/test_configs.py included, as does a testcase that configures
+        # another crate (the RP2040 HAL testcase's rp2040_hal.* values).
+        if self.private_runtime():
+            private_crate = self._testcase_working_dir / runtime_crate_dir.name
+            shutil.copytree(
+                src=runtime_crate_dir,
+                dst=private_crate,
+                ignore=shutil.ignore_patterns("obj", "adalib", "lib", "alire", "*.o", "*.ali"),
+            )
+            runtime_crate_dir = private_crate
 
         dependencies = {runtime_crate_name: "*"}
         dependencies |= self.external_crates()

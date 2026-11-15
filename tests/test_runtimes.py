@@ -137,6 +137,8 @@ def test_execute_on_target(
         )
 
         tc.check_test_conditions()
+        if tc.has_core_checks() and os.environ.get("RUN_OPENOCD_TESTS") != "1":
+            pytest.skip("its pass also needs the core checks that run_openocd_tests.py makes")
         tc.setup()
         p = tc.build()
         assert p.returncode == 0, "Build failed"
@@ -159,7 +161,7 @@ def test_execute_on_target(
             # Keep reading output until the TEST COMPLETE marker is found
 
             test_complete_marker = bytes("===TEST COMPLETE===", "ascii")
-            actual_output = target_if.read_io_until(test_complete_marker).decode('ascii')
+            actual_output = target_if.read_io_until(test_complete_marker, timeout=tc.io_timeout()).decode('ascii')
 
             with open(testcase_dir / "test.out", "rb") as f:
                 expected_output = f.read().decode('ascii')

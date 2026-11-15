@@ -1,0 +1,5 @@
+first pass: dirty lines over SRAM4, the data cache left on, then the hand-over
+data cache on: TRUE
+second pass, after a hand-over with the data cache on
+dirty lines written back across the hand-over: TRUE
+===TEST COMPLETE===

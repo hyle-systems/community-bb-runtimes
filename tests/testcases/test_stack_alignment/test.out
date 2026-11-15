@@ -1,0 +1,4 @@
+main SP mod 8 = 0
+handler SP mod 8 = 0 (served TRUE)
+task SP mod 8 = 0 (ran TRUE)
+===TEST COMPLETE===

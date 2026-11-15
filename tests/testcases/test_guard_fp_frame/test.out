@@ -1,0 +1,3 @@
+last chance: memory management fault
+the core's own stacking faulted (MSTKERR): TRUE
+===TEST COMPLETE===

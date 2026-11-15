@@ -86,8 +86,9 @@ def generate_tests() -> List[Tuple[str, str, Dict[str, str]]]:
     if not RUNTIMES_INSTALL_DIR.exists():
         return []
 
-    runtime_dirs = list(RUNTIMES_INSTALL_DIR.iterdir())
-    testcase_dirs = list(TESTCASES_DIR.iterdir())
+    # Sorted, so that the tests run in the same order on every file system
+    runtime_dirs = sorted(RUNTIMES_INSTALL_DIR.iterdir())
+    testcase_dirs = sorted(TESTCASES_DIR.iterdir())
 
     # Create a config entry for each combination of testcase and runtime
     # using the runtime's default crate configuration

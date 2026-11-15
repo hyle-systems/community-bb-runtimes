@@ -1,0 +1,4 @@
+blocking fifty times under a 512-byte guard
+idle survived
+MPU on, both task regions holding a 512-byte window: TRUE
+===TEST COMPLETE===

@@ -35,6 +35,7 @@ target_src_dirs = {
     "stm32g0xx": "stm32g0_src",
     "stm32g4xx": "stm32g4_src",
     "stm32f4xx": "stm32f4_src",
+    "stm32h7xx": "stm32h7_src",
 }
 
 
@@ -293,6 +294,8 @@ def main():
             project_file_withs_ravenscar if has_libgnarl else project_file_withs_light
         ),
         "max_cpus": "2" if has_libgnarl else "1",
+        "has_tasking": "True" if has_libgnarl else "False",
+        "has_exception_propagation": "True" if profile == "embedded" else "False",
     }
 
     target_templates_dir = (
@@ -314,6 +317,22 @@ def main():
             dst=runtime_dir / "ld",
             dirs_exist_ok=True,
         )
+
+    # Units a target wants in a profile beyond the generator's scenarios:
+    # stm32h7xx light-tasking takes embedded's System.BB.Threads.Stack_Checking
+    # (s-btstch), the __gnat_stack_check that -fstack-check calls. It raises
+    # Storage_Error (under No_Exception_Propagation, straight to the
+    # last-chance handler), needs only units light-tasking has, and is linked
+    # only when an application uses -fstack-check.
+    extra_gnarl_sources = {
+        ("stm32h7xx", "light-tasking"): [
+            "bb-runtimes/gnat_rts_sources/include/rts-sources/gnarl/full/s-btstch.ads",
+            "bb-runtimes/gnat_rts_sources/include/rts-sources/gnarl/full/s-btstch.adb",
+        ],
+    }
+    for src in extra_gnarl_sources.get((target, profile), []):
+        src_path = pathlib.Path(__file__).parent / src
+        shutil.copy(src_path, runtime_dir / "gnarl" / src_path.name)
 
     generate_runtime_subdirs(runtime_dir)
 

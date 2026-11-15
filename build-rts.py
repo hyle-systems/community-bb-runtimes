@@ -863,6 +863,131 @@ class Stm32F4(arm.cortexm.CortexM4F):
         self.add_linker_switch("-Wl,--no-warn-rwx-segments", loader="RAM")
 
 
+class CortexMArch_H7(arm.cortexm.CortexMArch):
+    def __init__(self):
+        super(CortexMArch_H7, self).__init__()
+        # The family's copy of the generic Armv7-M CPU primitives: upstream's
+        # unit plus the MPU stack guard. Swapped here, where CortexMArch
+        # registers the generic unit, as s-bbbosu.adb is swapped one level
+        # down. Its fault handlers go unused: handler.S sends the fault
+        # vectors to the family's trap.
+        self.remove_source("s-bbcppr.adb")
+        self.add_gnarl_sources("stm32h7_src/s-bbcppr.adb")
+
+
+class ArmV7MArch_H7(ArmV7MArch_Patched):
+    def __init__(self):
+        super(ArmV7MArch_H7, self).__init__()
+        # The board support stays ArmV7MArch_Patched's stm32g4_src copy. The
+        # family's PendSV handler, which programs the guard's task window once
+        # per switch (see the MPU stack guard notes in s-bbcppr.adb), is
+        # swapped in here, where ArmV7MArch adds the generic unit.
+        self.remove_source("s-bcpcst.adb")
+        self.add_gnarl_sources("stm32h7_src/s-bcpcst.adb")
+
+    @property
+    def parent(self):
+        return CortexMArch_H7
+
+
+class Stm32H7(arm.cortexm.CortexM7DF):
+    @property
+    def name(self):
+        return "stm32h7xx"
+
+    @property
+    def parent(self):
+        return ArmV7MArch_H7
+
+    @property
+    def use_semihosting_io(self):
+        return True
+
+    @property
+    def loaders(self):
+        return ("ROM", "RAM")
+
+    @property
+    def system_ads(self):
+        # CortexM7DF declares only the light profile. The ARMv7-M packages
+        # with 4 priority bits suit the H7, which has 16 levels.
+        return {
+            "light": "system-xi-arm.ads",
+            "light-tasking": "system-xi-cortexm4-sfp.ads",
+            "embedded": "system-xi-cortexm4-full.ads",
+        }
+
+    def __init__(self):
+        super(Stm32H7, self).__init__()
+
+        self.add_linker_script("stm32h7_src/ld/common-RAM.ld")
+        self.add_linker_script("stm32h7_src/ld/common-ROM.ld")
+        self.add_linker_script("stm32h7_src/ld/common-sections.ld")   # included by both
+
+        # Common source files, shared by all MCU_Sub_Family variants.
+        #
+        # The start-up is the family's own: AdaCore's arm/stm32/start-common.S
+        # enables the caches only for the F7 device IDs, read at the F7's
+        # DBGMCU address, so on an H7 it would leave them off and skip the TCM
+        # step.
+        self.add_gnat_sources(
+            "stm32h7_src/start-common.S",
+            "bb-runtimes/arm/stm32/start-ram.S",
+            "bb-runtimes/arm/stm32/start-rom.S",
+            "stm32h7_src/setup_pll.ads",
+            "stm32h7_src/setup_pll.adb",
+            "stm32h7_src/s-bbpara.ads",
+            "stm32h7_src/s-bbbopa.ads",
+            "stm32h7_src/s-bbfaul.ads",
+            "stm32h7_src/s-bbfaul.adb",
+        )
+
+        # The STM32H723/725/730/733/735 share one reference manual (RM0468),
+        # one RCC/PWR/FLASH register layout and one vector table. The
+        # H730/H733/H735's three crypto vectors (CRYP 79, OTFDEC1/2 151/152)
+        # fall in slots the table already has, unnamed.
+        sub_family_dirs = {
+            "H723": "stm32h72x",
+            "H725": "stm32h72x",
+            "H730": "stm32h72x",
+            "H733": "stm32h72x",
+            "H735": "stm32h72x",
+        }
+
+        for sub_family, dir_name in sub_family_dirs.items():
+            sub_family_dir = f"stm32h7_src/{dir_name}"
+
+            self.add_source_alias(
+                "gnat",
+                f"{sub_family}/s-bbmcpa.ads",
+                f"{sub_family_dir}/s-bbmcpa.ads",
+            )
+            for unit in (
+                "i-stm32.ads",
+                "i-stm32-flash.ads",
+                "i-stm32-pwr.ads",
+                "i-stm32-rcc.ads",
+                "handler.S",
+            ):
+                self.add_source_alias(
+                    "gnat",
+                    f"{sub_family}/{unit}",
+                    f"{sub_family_dir}/svd/{unit}",
+                )
+            self.add_source_alias(
+                "gnarl",
+                f"{sub_family}/a-intnam.ads",
+                f"{sub_family_dir}/svd/a-intnam.ads",
+            )
+
+        # Don't warn about RAM sections having RWX permissions. Execute
+        # permissions are currently needed for the stack since the compiler
+        # may emit executable trampolines on the stack in some cases
+        # (e.g. pointers to nested subprograms).
+        self.add_linker_switch("-Wl,--no-warn-rwx-segments", loader="ROM")
+        self.add_linker_switch("-Wl,--no-warn-rwx-segments", loader="RAM")
+
+
 def build_configs(target):
     if target == "rp2040":
         return RP2040()
@@ -884,6 +1009,8 @@ def build_configs(target):
         return Stm32G4()
     elif target == "stm32f4xx":
         return Stm32F4()
+    elif target == "stm32h7xx":
+        return Stm32H7()
     else:
         assert False, "unexpected target: %s" % target
 

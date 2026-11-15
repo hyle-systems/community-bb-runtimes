@@ -1,0 +1,5 @@
+MPU_CTRL = 5
+region 13 (interrupt stack): enabled TRUE size 256 whole TRUE no access TRUE xn TRUE base at bottom TRUE
+region 14 (environment stack): enabled TRUE size 256 whole TRUE no access TRUE xn TRUE base at bottom TRUE
+region 12/15 (task): enabled TRUE size 256 whole TRUE no access TRUE xn TRUE base in window TRUE
+===TEST COMPLETE===

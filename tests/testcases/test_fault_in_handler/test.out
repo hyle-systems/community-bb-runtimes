@@ -1,0 +1,5 @@
+pending the interrupt
+last chance: memory management fault
+reported on the fault stack: TRUE
+faulting SP in the interrupt stack: TRUE
+===TEST COMPLETE===

@@ -47,6 +47,14 @@ For example:
 pytest . --working-dir=out --keep-build-files
 ```
 
+A test that sets configuration values of the runtime crate itself rebuilds a private copy of
+that crate, which takes about 45 s. Such tests, and the configured rows of
+`test_negative_builds.py`, are skipped unless pytest is given `--private-runtime-builds`:
+
+```sh
+pytest . --private-runtime-builds
+```
+
 ## On-Target Testing
 
 > [!WARNING]
@@ -338,6 +346,7 @@ Testing on STM32 is done on the following boards:
 | `stm32g0xx` | Nucleo-G0B1RE |
 | `stm32g4xx` | Nucleo-G474RE |
 | `stm32f4xx` | STM32 F4VE    |
+| `stm32h7xx` | Nucleo-H723ZG |
 
 The following software is also required to be installed and available on your
 system PATH:
@@ -351,6 +360,49 @@ To run the tests, using the `stm32g0xx` target as an example:
 ```sh
 pytest . --target-board=stm32g0xx --target-if=st-util -k test_execute_on_target
 ```
+
+### Testing the stm32h7xx family
+
+`run_openocd_tests.py` runs the family's testcases one by one, starting and stopping OpenOCD around
+each. The ST-LINK V3 wedges when OpenOCD is killed mid-transaction, so the runner turns the target
+polling off over the telnet port before the kill:
+
+```sh
+cd tests
+python run_openocd_tests.py --target stm32h7xx --profile light-tasking \
+    --openocd /path/to/openocd --working-dir /path/to/work --log-dir /path/to/logs
+```
+
+Without a testcase list, the runner runs the generic testcases and then the family's own
+(`FAMILY_TESTCASES`).
+
+A test that takes longer than `--test-timeout` seconds (900 by default) is stopped and counted as
+TIMEOUT. The runner stops the whole process tree the test started, the build and GDB included, so
+that the timeout also holds on Windows. After a failure or a timeout, the runner halts the core and
+logs its state at the end of the test's pytest log: PC, xPSR, LR, the stack pointers, the fault
+status registers and DHCSR.
+
+The testcases of the default list that are expected to skip on each profile are listed in the
+runner (`EXPECTED_SKIPS`). A skip anywhere else, or a run where a skip is expected, counts as a
+failure.
+
+A core that locks up during a test fails it, whatever its output. OpenOCD notices the lockup and
+halts the core itself, and writes "clearing lockup after double fault" in its log, which the runner
+reads. The halt also clears DHCSR's lockup flag, so no later read of the core could show the
+lockup.
+
+Two modules need no board:
+
+- `test_generated.py` checks that the installed crates carry the family's sources byte for byte,
+  and checks the manifests' identity and the memory maps.
+- `test_negative_builds.py` builds the configurations the crates refuse, each with its expected
+  message, and the positive controls. A row with configuration values takes about 45 s and runs
+  only with `--private-runtime-builds`.
+
+The runner passes `--private-runtime-builds` to pytest. It stops OpenOCD after every test, also
+when the test fails or the runner is interrupted.
+
+Section 7 of the family's README describes the gate.
 
 ## Writing Tests
 
@@ -378,6 +430,12 @@ can contain some additional, optional functions to configure the test:
 | `local_crates` | Returns a list of crate names that are in the testcases's directory. These crates will be added to the build. |
 | `external_crates` | Returns a dictionary of crate names from the Alire index and the version to use. |
 | `crate_config_values` | Returns a dictionary of crate configuration variables to set, and the value to set. |
+| `build_args` | Returns a list of extra arguments for gprbuild (e.g. a scenario variable such as `-XLOADER=RAM`). |
+| `compiler_switches` | Returns a list of extra Ada compiler switches for the test program's own units (e.g. `-fstack-check`), not for the runtime. The last-chance handler `test_lch.adb` keeps the default switches. |
+| `linker_switches` | Returns a list of extra linker switches for the test program (e.g. a `--defsym` that sizes the environment stack). |
+| `source_dirs` | Returns a list of additional source directories, relative to the testcase directory (e.g. one last-chance handler per profile, from `../../support/lch_light` or `../../support/lch_embedded`, or another testcase's program). |
+| `io_timeout` | Returns the seconds to wait for the program's output to reach the completion marker (5 by default; a test that waits for a slow oscillator asks for more). |
+| `core_checks` | Used by `run_openocd_tests.py` only. Returns what the core's state must be once a passing program's output has been read: a list of (description, `"mem"` or `"reg"`, address or register name, mask, accepted values). The runner reads the `"mem"` items on the running core first, because DHCSR's S_LOCKUP clears when the core is halted; it then halts the core and reads the `"reg"` items. An item that gets no readable answer fails. Without the runner, such a test skips on the target, since its output alone does not show a pass. |
 
 Here is an example `opt.py` file:
 
